@@ -22,6 +22,12 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 })
 
+// NOTE: This file is a development-only seed script that runs outside the Next.js
+// app runtime. It uses the Supabase service-role client directly to create test
+// users via auth.admin.createUser — a deliberate exception to the lib/auth.ts
+// abstraction rule. Seed scripts are not production code and do not go through
+// the app's auth layer.
+
 const BLOCK_START = new Date('2026-03-01') // Sunday
 const BLOCK_END = addDays(BLOCK_START, 41) // Saturday April 11
 
