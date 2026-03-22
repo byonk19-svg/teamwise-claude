@@ -1,64 +1,99 @@
 // tests/unit/auth.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Mock Supabase clients before importing auth module
+// Mock Supabase clients before importing auth
+const mockSignInWithPassword = vi.fn().mockResolvedValue({ data: {}, error: null })
+const mockSignOut = vi.fn().mockResolvedValue({ error: null })
+const mockOnAuthStateChange = vi.fn(() => ({
+  data: { subscription: { unsubscribe: vi.fn() } },
+}))
+
 vi.mock('@/lib/supabase/client', () => ({
   createClient: vi.fn(() => ({
     auth: {
-      signInWithPassword: vi.fn().mockResolvedValue({ data: { user: { id: 'test-id' }, session: {} }, error: null }),
-      signOut: vi.fn().mockResolvedValue({ error: null }),
-      onAuthStateChange: vi.fn(() => ({
-        data: { subscription: { unsubscribe: vi.fn() } },
-      })),
+      signInWithPassword: mockSignInWithPassword,
+      signOut: mockSignOut,
+      onAuthStateChange: mockOnAuthStateChange,
     },
   })),
 }))
+
+const mockGetUser = vi.fn().mockResolvedValue({ data: { user: null }, error: null })
 
 vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(() => ({
-    auth: {
-      getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }),
-    },
+    auth: { getUser: mockGetUser },
   })),
 }))
 
+// Mock @supabase/supabase-js for inviteUser admin client
+const mockInviteUserByEmail = vi.fn().mockResolvedValue({ data: {}, error: null })
+vi.mock('@supabase/supabase-js', () => ({
+  createClient: vi.fn(() => ({
+    auth: { admin: { inviteUserByEmail: mockInviteUserByEmail } },
+  })),
+}))
+
+import { signIn, signOut, getServerUser, onAuthStateChange, inviteUser } from '@/lib/auth'
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  // Restore default mock behaviours after each test
+  mockSignInWithPassword.mockResolvedValue({ data: {}, error: null })
+  mockGetUser.mockResolvedValue({ data: { user: null }, error: null })
+  mockInviteUserByEmail.mockResolvedValue({ data: {}, error: null })
+})
+
 describe('lib/auth', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+  it('exports signIn, signOut, getServerUser, onAuthStateChange, inviteUser', () => {
+    expect(typeof signIn).toBe('function')
+    expect(typeof signOut).toBe('function')
+    expect(typeof getServerUser).toBe('function')
+    expect(typeof onAuthStateChange).toBe('function')
+    expect(typeof inviteUser).toBe('function')
   })
 
-  it('exports signIn, signOut, getServerUser, onAuthStateChange, inviteUser', async () => {
-    const auth = await import('@/lib/auth')
-    expect(typeof auth.signIn).toBe('function')
-    expect(typeof auth.signOut).toBe('function')
-    expect(typeof auth.getServerUser).toBe('function')
-    expect(typeof auth.onAuthStateChange).toBe('function')
-    expect(typeof auth.inviteUser).toBe('function')
-  })
-
-  it('signIn returns data and error shape', async () => {
-    const { signIn } = await import('@/lib/auth')
+  it('signIn calls supabase.auth.signInWithPassword', async () => {
     const result = await signIn('test@test.com', 'pass123')
+    expect(mockSignInWithPassword).toHaveBeenCalledWith({
+      email: 'test@test.com',
+      password: 'pass123',
+    })
     expect(result).toHaveProperty('data')
     expect(result).toHaveProperty('error')
-    expect(result.error).toBeNull()
   })
 
-  it('getServerUser returns null when no session', async () => {
-    const { getServerUser } = await import('@/lib/auth')
+  it('getServerUser returns null when no user is authenticated', async () => {
     const user = await getServerUser()
     expect(user).toBeNull()
   })
 
-  it('signOut returns no error', async () => {
-    const { signOut } = await import('@/lib/auth')
-    const result = await signOut()
-    expect(result.error).toBeNull()
+  it('getServerUser returns null and logs error when auth check fails', async () => {
+    mockGetUser.mockResolvedValueOnce({ data: { user: null }, error: { message: 'JWT expired' } })
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const user = await getServerUser()
+    expect(user).toBeNull()
+    expect(consoleSpy).toHaveBeenCalledWith('[auth] getServerUser error:', 'JWT expired')
+    consoleSpy.mockRestore()
   })
 
-  it('onAuthStateChange returns an unsubscribe function', async () => {
-    const { onAuthStateChange } = await import('@/lib/auth')
-    const unsubscribe = onAuthStateChange(vi.fn())
+  it('onAuthStateChange returns an unsubscribe function', () => {
+    const callback = vi.fn()
+    const unsubscribe = onAuthStateChange(callback)
     expect(typeof unsubscribe).toBe('function')
+    expect(mockOnAuthStateChange).toHaveBeenCalledWith(callback)
+  })
+
+  it('inviteUser calls admin.inviteUserByEmail with correct args', async () => {
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key'
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co'
+    const userData = {
+      full_name: 'Jane Doe',
+      role: 'therapist' as const,
+      employment_type: 'full_time' as const,
+      default_shift_type: 'day' as const,
+    }
+    await inviteUser('jane@test.com', userData)
+    expect(mockInviteUserByEmail).toHaveBeenCalledWith('jane@test.com', { data: userData })
   })
 })

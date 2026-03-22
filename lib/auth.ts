@@ -13,7 +13,13 @@ import { createClient as createServerClient } from '@/lib/supabase/server'
 /** Get the currently authenticated user. Use in Server Components and Route Handlers. */
 export async function getServerUser(): Promise<User | null> {
   const supabase = createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data: { user }, error } = await supabase.auth.getUser()
+  if (error) {
+    // Auth check failed (network error, malformed token, etc.)
+    // Treat as unauthenticated so middleware redirects to login.
+    console.error('[auth] getServerUser error:', error.message)
+    return null
+  }
   return user
 }
 
@@ -58,10 +64,13 @@ export async function inviteUser(
     default_shift_type: 'day' | 'night' | null
   }
 ) {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY is not set — inviteUser requires a service role key')
+  }
   const { createClient } = await import('@supabase/supabase-js')
   const admin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY
   )
   return admin.auth.admin.inviteUserByEmail(email, { data: userData })
 }
