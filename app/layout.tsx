@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { cn } from "@/lib/utils";
@@ -16,7 +16,17 @@ const geistMono = localFont({
 
 export const metadata: Metadata = {
   title: "Teamwise",
-  description: "RT department scheduling app",
+  description: "RT Department Scheduling",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Teamwise",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0f172a",
 };
 
 export default function RootLayout({
@@ -26,6 +36,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={cn(geistSans.variable, geistMono.variable)}>
+      <head>
+        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+      </head>
       <body className="font-sans antialiased">
         {children}
       </body>
