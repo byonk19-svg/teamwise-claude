@@ -93,3 +93,28 @@
     @apply font-sans;
   }
 }
+
+/* Teamwise schedule grid */
+.schedule-grid {
+  --shift-color: theme('colors.blue.500');
+  --shift-color-muted: theme('colors.blue.100');
+}
+
+.schedule-grid[data-shift="night"] {
+  --shift-color: theme('colors.violet.500');
+  --shift-color-muted: theme('colors.violet.100');
+}
+
+/* Grid column template shared by all rows */
+.grid-row {
+  display: grid;
+  grid-template-columns: 160px repeat(42, minmax(28px, 1fr));
+}
+
+/* Sticky first column (therapist name) */
+.grid-cell-name {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: white;
+}
