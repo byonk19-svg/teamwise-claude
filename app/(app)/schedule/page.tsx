@@ -24,12 +24,20 @@ export default async function SchedulePage() {
   const profile = profileData as UserRow | null
   if (!profile) redirect('/login')
 
+  if (!profile.department_id) {
+    return (
+      <div className="text-slate-500 text-sm p-8">
+        Your account is not assigned to a department. Contact your manager.
+      </div>
+    )
+  }
+
   const defaultShift = (profile.default_shift_type ?? 'day') as 'day' | 'night'
 
   const { data: blockData } = await supabase
     .from('schedule_blocks')
     .select('*')
-    .eq('department_id', profile.department_id!)
+    .eq('department_id', profile.department_id)
     .eq('shift_type', defaultShift)
     .in('status', ['final', 'active', 'preliminary', 'preliminary_draft'])
     .order('start_date', { ascending: false })
@@ -54,7 +62,7 @@ export default async function SchedulePage() {
   const { data: therapistsData } = await supabase
     .from('users')
     .select('*')
-    .eq('department_id', profile.department_id!)
+    .eq('department_id', profile.department_id)
     .eq('role', 'therapist')
     .order('employment_type', { ascending: true })
     .order('full_name', { ascending: true })

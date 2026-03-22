@@ -1,6 +1,6 @@
 // components/schedule/ScheduleGrid.tsx
 'use client'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { format, addDays } from 'date-fns'
 import { GridCell } from './GridCell'
 import { ShiftToggle } from './ShiftToggle'
@@ -29,20 +29,29 @@ function buildWeeks(dates: string[]): string[][] {
 export function ScheduleGrid({ block, shifts, therapists, defaultShiftType }: Props) {
   const [activeShift, setActiveShift] = useState<'day' | 'night'>(defaultShiftType)
   const [panelShift, setPanelShift] = useState<Shift | undefined>()
-  const [panelDate, setPanelDate] = useState<string>('')
+  const [panelDate, setPanelDate] = useState<string | null>(null)
   const [panelUser, setPanelUser] = useState<UserRow | undefined>()
   const [panelOpen, setPanelOpen] = useState(false)
 
-  const dates = buildDates(block.start_date)
-  const weeks = buildWeeks(dates)
+  const dates = useMemo(() => buildDates(block.start_date), [block.start_date])
+  const weeks = useMemo(() => buildWeeks(dates), [dates])
 
-  const ftTherapists = therapists.filter(t => t.employment_type === 'full_time')
-  const prnTherapists = therapists.filter(t => t.employment_type === 'prn')
+  const ftTherapists = useMemo(
+    () => therapists.filter(t => t.employment_type === 'full_time'),
+    [therapists]
+  )
+  const prnTherapists = useMemo(
+    () => therapists.filter(t => t.employment_type === 'prn'),
+    [therapists]
+  )
 
-  const shiftIndex = new Map<string, Shift>()
-  for (const s of shifts) {
-    shiftIndex.set(`${s.user_id}:${s.shift_date}`, s)
-  }
+  const shiftIndex = useMemo(() => {
+    const index = new Map<string, Shift>()
+    for (const s of shifts) {
+      index.set(`${s.user_id}:${s.shift_date}`, s)
+    }
+    return index
+  }, [shifts])
 
   function getShift(userId: string, date: string): Shift | undefined {
     return shiftIndex.get(`${userId}:${date}`)
@@ -55,11 +64,31 @@ export function ScheduleGrid({ block, shifts, therapists, defaultShiftType }: Pr
     setPanelOpen(true)
   }
 
+  const headcounts = useMemo(() => {
+    return dates.map(date => ({
+      date,
+      ft: ftTherapists.filter(t => shiftIndex.get(`${t.id}:${date}`)?.cell_state === 'working').length,
+      prn: prnTherapists.filter(t => shiftIndex.get(`${t.id}:${date}`)?.cell_state === 'working').length,
+    }))
+  }, [dates, ftTherapists, prnTherapists, shiftIndex])
+
+  const ftCountByDate = useMemo(() => {
+    const m = new Map<string, number>()
+    headcounts.forEach(({ date, ft }) => m.set(date, ft))
+    return m
+  }, [headcounts])
+
+  const prnCountByDate = useMemo(() => {
+    const m = new Map<string, number>()
+    headcounts.forEach(({ date, prn }) => m.set(date, prn))
+    return m
+  }, [headcounts])
+
   function ftCount(date: string): number {
-    return ftTherapists.filter(t => getShift(t.id, date)?.cell_state === 'working').length
+    return ftCountByDate.get(date) ?? 0
   }
   function prnCount(date: string): number {
-    return prnTherapists.filter(t => getShift(t.id, date)?.cell_state === 'working').length
+    return prnCountByDate.get(date) ?? 0
   }
   function headcountClass(n: number): string {
     if (n < 3) return 'text-red-600 font-bold'
@@ -225,7 +254,7 @@ export function ScheduleGrid({ block, shifts, therapists, defaultShiftType }: Pr
         open={panelOpen}
         onClose={() => setPanelOpen(false)}
         shift={panelShift}
-        date={panelDate}
+        date={panelDate ?? ''}
         user={panelUser}
       />
     </div>
