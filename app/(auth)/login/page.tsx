@@ -17,16 +17,19 @@ export default function LoginPage() {
     setLoading(true)
     setError(null)
 
-    const { error: signInError } = await signIn(email, password)
+    try {
+      const { error: signInError } = await signIn(email, password)
 
-    if (signInError) {
-      setError(signInError.message)
+      if (signInError) {
+        setError(signInError.message)
+        return
+      }
+
+      router.push('/schedule')
+      router.refresh()
+    } finally {
       setLoading(false)
-      return
     }
-
-    router.push('/schedule')
-    router.refresh()
   }
 
   return (
