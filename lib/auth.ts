@@ -6,12 +6,12 @@
 
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
 import { createClient as createBrowserClient } from '@/lib/supabase/client'
-import { createClient as createServerClient } from '@/lib/supabase/server'
 
 // ── Server-side ──────────────────────────────────────────────────────────────
 
 /** Get the currently authenticated user. Use in Server Components and Route Handlers. */
 export async function getServerUser(): Promise<User | null> {
+  const { createClient: createServerClient } = await import('@/lib/supabase/server')
   const supabase = createServerClient()
   const { data: { user }, error } = await supabase.auth.getUser()
   if (error) {

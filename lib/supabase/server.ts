@@ -1,9 +1,10 @@
 // lib/supabase/server.ts
 import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import type { Database } from '@/lib/types/database.types'
 
 export function createClient() {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { cookies } = require('next/headers')
   const cookieStore = cookies()
   return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
