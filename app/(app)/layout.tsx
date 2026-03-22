@@ -13,11 +13,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!user) redirect('/login')
 
   const supabase = createClient()
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from('users')
     .select('full_name, role')
     .eq('id', user.id)
-    .single() as { data: UserProfile | null; error: unknown }
+    .single() as { data: UserProfile | null; error: { message: string } | null }
+
+  if (profileError) {
+    console.error('[layout] profile fetch error:', profileError.message)
+    redirect('/login')
+  }
 
   if (!profile) redirect('/login')
 

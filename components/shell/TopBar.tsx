@@ -17,7 +17,6 @@ export function TopBar({ user }: Props) {
   async function handleSignOut() {
     await signOut()
     router.push('/login')
-    router.refresh()
   }
 
   return (
