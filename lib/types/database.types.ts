@@ -1,6 +1,5 @@
 // lib/types/database.types.ts
-// Manual stub — replace with: npx supabase gen types typescript --project-id YOUR_ID
-// after applying the schema in Task 3.
+// Manual stub — replace with: npx supabase gen types typescript --project-id jcvlmwsiiikifdvaufqz
 
 export type Database = {
   public: {
@@ -19,6 +18,11 @@ export type Database = {
         }
         Insert: Omit<Database['public']['Tables']['users']['Row'], 'created_at'>
         Update: Partial<Database['public']['Tables']['users']['Insert']>
+      }
+      departments: {
+        Row: { id: string; name: string; created_at: string }
+        Insert: Omit<Database['public']['Tables']['departments']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['departments']['Insert']>
       }
       schedule_blocks: {
         Row: {
@@ -55,14 +59,56 @@ export type Database = {
         Insert: Omit<Database['public']['Tables']['shifts']['Row'], 'id' | 'created_at' | 'updated_at'>
         Update: Partial<Database['public']['Tables']['shifts']['Insert']>
       }
-      departments: {
-        Row: { id: string; name: string; created_at: string }
-        Insert: Omit<Database['public']['Tables']['departments']['Row'], 'id' | 'created_at'>
-        Update: Partial<Database['public']['Tables']['departments']['Insert']>
+      availability_submissions: {
+        Row: {
+          id: string
+          schedule_block_id: string
+          user_id: string
+          submitted_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['availability_submissions']['Row'], 'id' | 'submitted_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['availability_submissions']['Insert']>
+      }
+      availability_entries: {
+        Row: {
+          id: string
+          submission_id: string
+          entry_date: string
+          entry_type: 'cannot_work' | 'requesting_to_work' | 'available_day' | 'available_night' | 'available_either'
+          note: string | null
+        }
+        Insert: Omit<Database['public']['Tables']['availability_entries']['Row'], 'id'>
+        Update: Partial<Database['public']['Tables']['availability_entries']['Insert']>
       }
     }
-    Views: Record<string, never>
-    Functions: Record<string, never>
+    Views: {
+      shift_planned_headcount: {
+        Row: {
+          schedule_block_id: string
+          shift_date: string
+          ft_count: number
+          prn_count: number
+          total_count: number
+        }
+      }
+    }
+    Functions: {
+      copy_block: {
+        Args: { source_block_id: string; new_block_id: string }
+        Returns: void
+      }
+      get_constraint_diff: {
+        Args: { p_new_block_id: string }
+        Returns: Array<{
+          user_id: string
+          full_name: string
+          shift_date: string
+          prior_cell_state: string
+          avail_entry_type: string
+        }>
+      }
+    }
     Enums: Record<string, never>
   }
 }
