@@ -6,6 +6,8 @@ import { ScheduleGrid } from '@/components/schedule/ScheduleGrid'
 import { BlockPicker } from '@/components/schedule/BlockPicker'
 import { AvailabilityWindowControl } from '@/components/schedule/AvailabilityWindowControl'
 import { SubmissionTracker } from '@/components/availability/SubmissionTracker'
+import { ConstraintDiff, type DiffItem } from '@/components/schedule/ConstraintDiff'
+import { BlockStatusActions } from '@/components/schedule/BlockStatusActions'
 import Link from 'next/link'
 import type { Database } from '@/lib/types/database.types'
 
@@ -111,6 +113,18 @@ export default async function SchedulePage({ searchParams }: PageProps) {
     submissions = (subData ?? []) as SubmissionRow[]
   }
 
+  // Fetch constraint diff if this is a copied block (manager only)
+  let diff: DiffItem[] = []
+  if (profile.role === 'manager' && block.copied_from_block_id) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: diffData } = await (supabase as any)
+      .rpc('get_constraint_diff', { p_new_block_id: block.id })
+    diff = (diffData ?? []) as DiffItem[]
+  }
+
+  // Build a Set of "userId:date" keys for O(1) lookup in GridCell
+  const conflictedCells = new Set(diff.map(d => `${d.user_id}:${d.shift_date}`))
+
   return (
     <div className="flex flex-col gap-3">
       {/* Top controls */}
@@ -128,14 +142,34 @@ export default async function SchedulePage({ searchParams }: PageProps) {
             + New Block
           </Link>
         )}
+        <BlockStatusActions block={block} userRole={profile.role as 'manager' | 'therapist'} />
       </div>
+
+      {profile.role === 'therapist' && block.status === 'preliminary' && profile.employment_type === 'full_time' && (
+        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+          This schedule is Preliminary. Open any of your cells to request a change.
+        </p>
+      )}
+      {profile.role === 'therapist' && block.status === 'preliminary' && profile.employment_type === 'prn' && (
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/availability/open-shifts?blockId=${block.id}&shift=${activeShift}`}
+            className="text-sm px-3 py-1.5 border border-slate-300 rounded-md hover:bg-slate-50"
+          >
+            View Open Shifts
+          </Link>
+        </div>
+      )}
+
+      {diff.length > 0 && <ConstraintDiff diff={diff} />}
 
       <ScheduleGrid
         block={block}
         shifts={shifts}
         therapists={therapists}
         defaultShiftType={activeShift}
-        userRole={profile.role}
+        userRole={profile.role as 'manager' | 'therapist'}
+        conflictedCells={conflictedCells}
       />
 
       {/* Manager availability panel */}
