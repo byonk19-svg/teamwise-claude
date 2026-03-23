@@ -4,12 +4,15 @@ import { getServerUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { ScheduleGrid } from '@/components/schedule/ScheduleGrid'
 import { BlockPicker } from '@/components/schedule/BlockPicker'
+import { AvailabilityWindowControl } from '@/components/schedule/AvailabilityWindowControl'
+import { SubmissionTracker } from '@/components/availability/SubmissionTracker'
 import Link from 'next/link'
 import type { Database } from '@/lib/types/database.types'
 
 type UserRow = Database['public']['Tables']['users']['Row']
 type BlockRow = Database['public']['Tables']['schedule_blocks']['Row']
 type ShiftRow = Database['public']['Tables']['shifts']['Row']
+type SubmissionRow = Database['public']['Tables']['availability_submissions']['Row']
 
 interface PageProps {
   searchParams: { blockId?: string; shift?: string }
@@ -98,6 +101,16 @@ export default async function SchedulePage({ searchParams }: PageProps) {
   const shifts = (shiftsData ?? []) as ShiftRow[]
   const therapists = (therapistsData ?? []) as UserRow[]
 
+  // Fetch availability submissions for current block (manager view)
+  let submissions: SubmissionRow[] = []
+  if (profile.role === 'manager') {
+    const { data: subData } = await supabase
+      .from('availability_submissions')
+      .select('*')
+      .eq('schedule_block_id', block.id)
+    submissions = (subData ?? []) as SubmissionRow[]
+  }
+
   return (
     <div className="flex flex-col gap-3">
       {/* Top controls */}
@@ -124,6 +137,14 @@ export default async function SchedulePage({ searchParams }: PageProps) {
         defaultShiftType={activeShift}
         userRole={profile.role}
       />
+
+      {/* Manager availability panel */}
+      {profile.role === 'manager' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+          <AvailabilityWindowControl block={block} />
+          <SubmissionTracker therapists={therapists} submissions={submissions} />
+        </div>
+      )}
     </div>
   )
 }
