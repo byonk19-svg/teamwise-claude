@@ -7,10 +7,13 @@ import { format } from 'date-fns'
 import { updateCellState } from '@/app/actions/schedule'
 import type { Database } from '@/lib/types/database.types'
 import { canEditCell } from '@/lib/schedule/block-status'
+import { isChangeRequestAllowed } from '@/lib/schedule/change-requests'
+import { submitChangeRequest } from '@/app/actions/change-requests'
 
 type Shift = Database['public']['Tables']['shifts']['Row']
 type UserRow = Database['public']['Tables']['users']['Row']
 type CellState = Shift['cell_state']
+type ChangeReqType = Database['public']['Tables']['preliminary_change_requests']['Row']['request_type']
 
 const STATE_LABELS: Record<CellState, string> = {
   working:      'Working',
@@ -37,6 +40,11 @@ interface Props {
 export function CellPanel({ open, onClose, shift, date, user, userRole, onCellStateUpdate, blockStatus, blockId, currentUserId }: Props) {
   const [isPending, startTransition] = useTransition()
   const [editError, setEditError] = useState<string | null>(null)
+  const [showChangeReqForm, setShowChangeReqForm] = useState(false)
+  const [reqType, setReqType] = useState<ChangeReqType>('move_shift')
+  const [reqNote, setReqNote] = useState('')
+  const [reqError, setReqError] = useState<string | null>(null)
+  const [reqSuccess, setReqSuccess] = useState(false)
 
   if (!user || !date) return null
 
@@ -44,6 +52,21 @@ export function CellPanel({ open, onClose, shift, date, user, userRole, onCellSt
   const isLead = !!shift?.lead_user_id
 
   const formattedDate = format(new Date(date + 'T00:00:00'), 'EEEE, MMMM d, yyyy')
+
+  function handleChangeReqSubmit() {
+    if (!shift) return
+    setReqError(null)
+    startTransition(async () => {
+      const result = await submitChangeRequest(blockId, shift.id, reqType, reqNote || null)
+      if (result.error) {
+        setReqError(result.error)
+      } else {
+        setReqSuccess(true)
+        setShowChangeReqForm(false)
+        setReqNote('')
+      }
+    })
+  }
 
   function handleStateChange(newState: CellState) {
     if (!shift) return
@@ -127,6 +150,69 @@ export function CellPanel({ open, onClose, shift, date, user, userRole, onCellSt
             </div>
           )}
         </div>
+
+        {/* FT Change Request — only on Preliminary blocks, therapist's own cell */}
+        {shift &&
+          isChangeRequestAllowed(blockStatus, userRole, user.employment_type as 'full_time' | 'prn') &&
+          user.id === currentUserId && (
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              {reqSuccess ? (
+                <p className="text-sm text-green-700">Change request submitted.</p>
+              ) : showChangeReqForm ? (
+                <div className="space-y-3">
+                  <span className="block text-sm font-medium text-slate-700">Request Change</span>
+                  <div className="space-y-1.5">
+                    {(['move_shift', 'mark_off', 'other'] as const).map(t => (
+                      <label key={t} className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="radio"
+                          name="reqType"
+                          value={t}
+                          checked={reqType === t}
+                          onChange={() => setReqType(t)}
+                          className="accent-slate-900"
+                        />
+                        {t === 'move_shift' ? 'Move shift' : t === 'mark_off' ? 'Mark off' : 'Other'}
+                      </label>
+                    ))}
+                  </div>
+                  <textarea
+                    value={reqNote}
+                    onChange={e => setReqNote(e.target.value)}
+                    placeholder="Optional note…"
+                    rows={2}
+                    className="w-full text-sm border border-slate-200 rounded-md px-2 py-1.5 resize-none focus:outline-none focus:ring-2 focus:ring-slate-400"
+                  />
+                  {reqError && <p className="text-xs text-red-600">{reqError}</p>}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleChangeReqSubmit}
+                      disabled={isPending}
+                      className="flex-1 py-1.5 text-sm bg-slate-900 text-white rounded-md hover:bg-slate-800 disabled:opacity-50"
+                    >
+                      {isPending ? 'Submitting…' : 'Submit Request'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowChangeReqForm(false); setReqNote('') }}
+                      className="py-1.5 px-3 text-sm border border-slate-200 rounded-md hover:bg-slate-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowChangeReqForm(true)}
+                  className="w-full py-2 text-sm border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50"
+                >
+                  Request Change
+                </button>
+              )}
+            </div>
+          )}
       </SheetContent>
     </Sheet>
   )
