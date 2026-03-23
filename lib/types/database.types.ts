@@ -81,6 +81,47 @@ export type Database = {
         Insert: Omit<Database['public']['Tables']['availability_entries']['Row'], 'id'>
         Update: Partial<Database['public']['Tables']['availability_entries']['Insert']>
       }
+      preliminary_change_requests: {
+        Row: {
+          id: string
+          schedule_block_id: string
+          requester_id: string
+          shift_id: string
+          request_type: 'move_shift' | 'mark_off' | 'other'
+          note: string | null
+          status: 'pending' | 'accepted' | 'rejected'
+          response_note: string | null
+          created_at: string
+          actioned_at: string | null
+          actioned_by: string | null
+        }
+        Insert: Omit<
+          Database['public']['Tables']['preliminary_change_requests']['Row'],
+          'id' | 'created_at'
+        >
+        Update: Partial<
+          Database['public']['Tables']['preliminary_change_requests']['Insert']
+        >
+      }
+      prn_shift_interest: {
+        Row: {
+          id: string
+          user_id: string
+          shift_id: string
+          status: 'pending' | 'confirmed' | 'declined'
+          outside_availability: boolean
+          submitted_at: string
+          actioned_at: string | null
+          actioned_by: string | null
+        }
+        Insert: Omit<
+          Database['public']['Tables']['prn_shift_interest']['Row'],
+          'id' | 'submitted_at'
+        >
+        Update: Partial<
+          Database['public']['Tables']['prn_shift_interest']['Insert']
+        >
+      }
     }
     Views: {
       shift_planned_headcount: {
