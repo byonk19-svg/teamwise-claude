@@ -54,7 +54,7 @@ export function AvailabilityWindowControl({ block }: Props) {
               : '—'}
           </p>
         </div>
-      ) : block.availability_window_close ? (
+      ) : block.availability_window_close && new Date(block.availability_window_close) < new Date() ? (
         <p className="text-xs text-slate-500">
           Window closed: {new Date(block.availability_window_close).toLocaleString()}
         </p>
