@@ -15,6 +15,7 @@ interface Props {
   shifts: Shift[]
   therapists: UserRow[]
   defaultShiftType: 'day' | 'night'
+  userRole?: string
 }
 
 function buildDates(startDate: string): string[] {
