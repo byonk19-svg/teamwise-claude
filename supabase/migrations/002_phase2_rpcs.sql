@@ -12,7 +12,13 @@ RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
+DECLARE
+  v_source_start date;
+  v_new_start    date;
 BEGIN
+  SELECT start_date INTO v_source_start FROM schedule_blocks WHERE id = source_block_id;
+  SELECT start_date INTO v_new_start    FROM schedule_blocks WHERE id = new_block_id;
+
   INSERT INTO shifts (
     schedule_block_id, user_id, shift_date,
     cell_state, lead_user_id, is_cross_shift, modified_after_publish
@@ -20,7 +26,7 @@ BEGIN
   SELECT
     new_block_id,
     s.user_id,
-    s.shift_date,
+    s.shift_date + (v_new_start - v_source_start),  -- remap dates to new block window
     s.cell_state,
     NULL,   -- lead cleared
     false,  -- cross-shift cleared
