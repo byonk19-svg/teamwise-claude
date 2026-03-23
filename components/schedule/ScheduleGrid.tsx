@@ -18,6 +18,9 @@ interface Props {
   defaultShiftType: 'day' | 'night'
   userRole: 'manager' | 'therapist'
   conflictedCells?: Set<string>
+  blockStatus: Database['public']['Tables']['schedule_blocks']['Row']['status']
+  blockId: string
+  currentUserId: string
 }
 
 function buildDates(startDate: string): string[] {
@@ -29,7 +32,7 @@ function buildWeeks(dates: string[]): string[][] {
   return Array.from({ length: 6 }, (_, i) => dates.slice(i * 7, i * 7 + 7))
 }
 
-export function ScheduleGrid({ block, shifts: initialShifts, therapists, defaultShiftType, userRole, conflictedCells }: Props) {
+export function ScheduleGrid({ block, shifts: initialShifts, therapists, defaultShiftType, userRole, conflictedCells, blockStatus, blockId, currentUserId }: Props) {
   const [activeShift, setActiveShift] = useState<'day' | 'night'>(defaultShiftType)
   const [shifts, setShifts] = useState<Shift[]>(initialShifts)
   const [panelShift, setPanelShift] = useState<Shift | undefined>()
@@ -275,6 +278,9 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
         user={panelUser}
         userRole={userRole}
         onCellStateUpdate={handleCellStateUpdate}
+        blockStatus={blockStatus}
+        blockId={blockId}
+        currentUserId={currentUserId}
       />
     </div>
   )

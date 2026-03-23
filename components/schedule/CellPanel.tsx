@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
 import { updateCellState } from '@/app/actions/schedule'
 import type { Database } from '@/lib/types/database.types'
+import { canEditCell } from '@/lib/schedule/block-status'
 
 type Shift = Database['public']['Tables']['shifts']['Row']
 type UserRow = Database['public']['Tables']['users']['Row']
@@ -28,9 +29,12 @@ interface Props {
   user: UserRow | undefined
   userRole: 'manager' | 'therapist'
   onCellStateUpdate: (shiftId: string, newState: CellState, revert: Shift) => () => void
+  blockStatus: Database['public']['Tables']['schedule_blocks']['Row']['status']
+  blockId: string
+  currentUserId: string
 }
 
-export function CellPanel({ open, onClose, shift, date, user, userRole, onCellStateUpdate }: Props) {
+export function CellPanel({ open, onClose, shift, date, user, userRole, onCellStateUpdate, blockStatus, blockId, currentUserId }: Props) {
   const [isPending, startTransition] = useTransition()
   const [editError, setEditError] = useState<string | null>(null)
 
@@ -66,7 +70,7 @@ export function CellPanel({ open, onClose, shift, date, user, userRole, onCellSt
           {/* Cell state — editable for managers */}
           <div>
             <span className="block text-sm font-medium text-slate-700 mb-2">Status</span>
-            {userRole === 'manager' && shift ? (
+            {userRole === 'manager' && shift && canEditCell(blockStatus, userRole) ? (
               <div className="grid grid-cols-2 gap-1.5">
                 {ALL_STATES.map(s => (
                   <button

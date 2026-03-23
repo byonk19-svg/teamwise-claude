@@ -2,6 +2,7 @@
 'use client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { Database } from '@/lib/types/database.types'
+import { classifyBlock } from '@/lib/schedule/block-status'
 
 type BlockRow = Database['public']['Tables']['schedule_blocks']['Row']
 
@@ -59,20 +60,32 @@ export function BlockPicker({ blocks, currentBlockId, currentShift }: Props) {
       </div>
 
       {/* Block selector */}
-      <select
-        value={currentBlockId}
-        onChange={e => handleBlockChange(e.target.value)}
-        className="text-sm border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
-      >
-        {blocks
-          .filter(b => b.shift_type === currentShift)
-          .map(b => (
-            <option key={b.id} value={b.id}>
-              {blockLabel(b.start_date, b.end_date, b.status)}
-            </option>
-          ))
-        }
-      </select>
+      {(() => {
+        const today = new Date().toISOString().slice(0, 10)
+        const filtered = blocks.filter(b => b.shift_type === currentShift)
+        const past     = filtered.filter(b => classifyBlock(b.end_date, b.start_date, today) === 'past')
+        const current  = filtered.filter(b => classifyBlock(b.end_date, b.start_date, today) === 'current')
+        const upcoming = filtered.filter(b => classifyBlock(b.end_date, b.start_date, today) === 'upcoming')
+        return (
+          <select value={currentBlockId} onChange={e => handleBlockChange(e.target.value)} className="text-sm border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400">
+            {current.length > 0 && (
+              <optgroup label="Current">
+                {current.map(b => <option key={b.id} value={b.id}>{blockLabel(b.start_date, b.end_date, b.status)}</option>)}
+              </optgroup>
+            )}
+            {upcoming.length > 0 && (
+              <optgroup label="Upcoming">
+                {upcoming.map(b => <option key={b.id} value={b.id}>{blockLabel(b.start_date, b.end_date, b.status)}</option>)}
+              </optgroup>
+            )}
+            {past.length > 0 && (
+              <optgroup label="Past">
+                {past.map(b => <option key={b.id} value={b.id}>{blockLabel(b.start_date, b.end_date, b.status)}</option>)}
+              </optgroup>
+            )}
+          </select>
+        )
+      })()}
     </div>
   )
 }

@@ -170,6 +170,9 @@ export default async function SchedulePage({ searchParams }: PageProps) {
         defaultShiftType={activeShift}
         userRole={profile.role as 'manager' | 'therapist'}
         conflictedCells={conflictedCells}
+        currentUserId={user.id}
+        blockStatus={block.status}
+        blockId={block.id}
       />
 
       {/* Manager availability panel */}
