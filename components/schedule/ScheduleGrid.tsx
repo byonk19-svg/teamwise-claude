@@ -1,10 +1,11 @@
 // components/schedule/ScheduleGrid.tsx
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { format, addDays } from 'date-fns'
 import { GridCell } from './GridCell'
 import { ShiftToggle } from './ShiftToggle'
 import { CellPanel } from './CellPanel'
+import { applyOptimisticUpdate } from '@/lib/schedule/optimistic'
 import type { Database } from '@/lib/types/database.types'
 
 type Shift = Database['public']['Tables']['shifts']['Row']
@@ -15,7 +16,8 @@ interface Props {
   shifts: Shift[]
   therapists: UserRow[]
   defaultShiftType: 'day' | 'night'
-  userRole?: string
+  userRole: 'manager' | 'therapist'
+  conflictedCells?: Set<string>
 }
 
 function buildDates(startDate: string): string[] {
@@ -27,8 +29,9 @@ function buildWeeks(dates: string[]): string[][] {
   return Array.from({ length: 6 }, (_, i) => dates.slice(i * 7, i * 7 + 7))
 }
 
-export function ScheduleGrid({ block, shifts, therapists, defaultShiftType }: Props) {
+export function ScheduleGrid({ block, shifts: initialShifts, therapists, defaultShiftType, userRole, conflictedCells }: Props) {
   const [activeShift, setActiveShift] = useState<'day' | 'night'>(defaultShiftType)
+  const [shifts, setShifts] = useState<Shift[]>(initialShifts)
   const [panelShift, setPanelShift] = useState<Shift | undefined>()
   const [panelDate, setPanelDate] = useState<string | null>(null)
   const [panelUser, setPanelUser] = useState<UserRow | undefined>()
@@ -58,8 +61,19 @@ export function ScheduleGrid({ block, shifts, therapists, defaultShiftType }: Pr
     return shiftIndex.get(`${userId}:${date}`)
   }
 
+  const handleCellStateUpdate = useCallback((shiftId: string, newState: Shift['cell_state'], revert: Shift) => {
+    setShifts(prev => applyOptimisticUpdate(prev, shiftId, newState))
+    setPanelShift(prev => prev?.id === shiftId ? { ...prev, cell_state: newState } : prev)
+
+    return () => {
+      setShifts(prev => prev.map(s => s.id === shiftId ? revert : s))
+      setPanelShift(prev => prev?.id === shiftId ? revert : prev)
+    }
+  }, [])
+
   function handleCellClick(shift: Shift | undefined, date: string, user: UserRow) {
-    setPanelShift(shift)
+    const currentShift = shift ? shifts.find(s => s.id === shift.id) ?? shift : undefined
+    setPanelShift(currentShift)
     setPanelDate(date)
     setPanelUser(user)
     setPanelOpen(true)
@@ -175,6 +189,7 @@ export function ScheduleGrid({ block, shifts, therapists, defaultShiftType }: Pr
                   shift={getShift(therapist.id, date)}
                   date={date}
                   onClick={(shift, d) => handleCellClick(shift, d, therapist)}
+                  isConflicted={conflictedCells?.has(`${therapist.id}:${date}`) ?? false}
                 />
               ))}
             </div>
@@ -213,6 +228,7 @@ export function ScheduleGrid({ block, shifts, therapists, defaultShiftType }: Pr
                   shift={getShift(therapist.id, date)}
                   date={date}
                   onClick={(shift, d) => handleCellClick(shift, d, therapist)}
+                  isConflicted={conflictedCells?.has(`${therapist.id}:${date}`) ?? false}
                 />
               ))}
             </div>
@@ -257,6 +273,8 @@ export function ScheduleGrid({ block, shifts, therapists, defaultShiftType }: Pr
         shift={panelShift}
         date={panelDate ?? ''}
         user={panelUser}
+        userRole={userRole}
+        onCellStateUpdate={handleCellStateUpdate}
       />
     </div>
   )
