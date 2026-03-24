@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getServerUser } from '@/lib/auth'
 import { isSwapAllowed, swapExpiryDate } from '@/lib/schedule/swap-requests'
+import { logActionFailure, logActionStart, logActionSuccess } from '@/lib/observability/action-log'
 
 /**
  * Therapist submits a swap request.
@@ -17,7 +18,11 @@ export async function submitSwap(
   requestNote: string | null
 ): Promise<{ error?: string }> {
   const user = await getServerUser()
-  if (!user) return { error: 'Not authenticated' }
+  if (!user) {
+    logActionFailure('submitSwap', undefined, 'Not authenticated')
+    return { error: 'Not authenticated' }
+  }
+  logActionStart('submitSwap', user.id, { blockId, requesterShiftId, partnerShiftId })
 
   const supabase = createClient()
 
@@ -27,8 +32,14 @@ export async function submitSwap(
     .select('status')
     .eq('id', blockId)
     .single() as { data: { status: string } | null; error: unknown }
-  if (!block) return { error: 'Block not found' }
-  if (!isSwapAllowed(block.status)) return { error: 'Swaps are not allowed for this block status' }
+  if (!block) {
+    logActionFailure('submitSwap', user.id, 'Block not found', { blockId })
+    return { error: 'Block not found' }
+  }
+  if (!isSwapAllowed(block.status)) {
+    logActionFailure('submitSwap', user.id, 'Block status guard rejected', { blockId, status: block.status })
+    return { error: 'Swaps are not allowed for this block status' }
+  }
 
   // Validate requester shift belongs to this user and is working
   const { data: reqShift } = await supabase
@@ -36,10 +47,22 @@ export async function submitSwap(
     .select('id, user_id, cell_state, shift_date, is_cross_shift, schedule_block_id')
     .eq('id', requesterShiftId)
     .single() as { data: { id: string; user_id: string; cell_state: string; shift_date: string; is_cross_shift: boolean; schedule_block_id: string } | null; error: unknown }
-  if (!reqShift) return { error: 'Shift not found' }
-  if (reqShift.user_id !== user.id) return { error: 'You can only swap your own shifts' }
-  if (reqShift.cell_state !== 'working') return { error: 'You can only swap a Working shift' }
-  if (reqShift.schedule_block_id !== blockId) return { error: 'Shift does not belong to this block' }
+  if (!reqShift) {
+    logActionFailure('submitSwap', user.id, 'Requester shift not found', { requesterShiftId })
+    return { error: 'Shift not found' }
+  }
+  if (reqShift.user_id !== user.id) {
+    logActionFailure('submitSwap', user.id, 'Requester shift ownership mismatch', { requesterShiftId })
+    return { error: 'You can only swap your own shifts' }
+  }
+  if (reqShift.cell_state !== 'working') {
+    logActionFailure('submitSwap', user.id, 'Requester shift not working', { requesterShiftId })
+    return { error: 'You can only swap a Working shift' }
+  }
+  if (reqShift.schedule_block_id !== blockId) {
+    logActionFailure('submitSwap', user.id, 'Requester shift block mismatch', { requesterShiftId, blockId })
+    return { error: 'Shift does not belong to this block' }
+  }
 
   // Validate partner shift exists and is working
   const { data: partnerShift } = await supabase
@@ -47,10 +70,22 @@ export async function submitSwap(
     .select('id, user_id, cell_state, is_cross_shift, schedule_block_id')
     .eq('id', partnerShiftId)
     .single() as { data: { id: string; user_id: string; cell_state: string; is_cross_shift: boolean; schedule_block_id: string } | null; error: unknown }
-  if (!partnerShift) return { error: 'Partner shift not found' }
-  if (partnerShift.cell_state !== 'working') return { error: 'Partner must be working on that date' }
-  if (partnerShift.schedule_block_id !== blockId) return { error: 'Partner shift does not belong to this block' }
-  if (partnerShift.user_id === user.id) return { error: 'Cannot swap with yourself' }
+  if (!partnerShift) {
+    logActionFailure('submitSwap', user.id, 'Partner shift not found', { partnerShiftId })
+    return { error: 'Partner shift not found' }
+  }
+  if (partnerShift.cell_state !== 'working') {
+    logActionFailure('submitSwap', user.id, 'Partner shift not working', { partnerShiftId })
+    return { error: 'Partner must be working on that date' }
+  }
+  if (partnerShift.schedule_block_id !== blockId) {
+    logActionFailure('submitSwap', user.id, 'Partner shift block mismatch', { partnerShiftId, blockId })
+    return { error: 'Partner shift does not belong to this block' }
+  }
+  if (partnerShift.user_id === user.id) {
+    logActionFailure('submitSwap', user.id, 'Self-swap rejected', { partnerShiftId })
+    return { error: 'Cannot swap with yourself' }
+  }
 
   const isCrossShift = reqShift.is_cross_shift || partnerShift.is_cross_shift
 
@@ -69,10 +104,14 @@ export async function submitSwap(
       request_note: requestNote || null,
     })
 
-  if (error) return { error: error.message }
+  if (error) {
+    logActionFailure('submitSwap', user.id, error.message, { blockId, requesterShiftId, partnerShiftId })
+    return { error: error.message }
+  }
 
   revalidatePath('/swaps')
   revalidatePath('/schedule')
+  logActionSuccess('submitSwap', user.id, { blockId, requesterShiftId, partnerShiftId })
   return {}
 }
 
@@ -86,7 +125,11 @@ export async function resolveSwap(
   responseNote: string | null
 ): Promise<{ error?: string }> {
   const user = await getServerUser()
-  if (!user) return { error: 'Not authenticated' }
+  if (!user) {
+    logActionFailure('resolveSwap', undefined, 'Not authenticated')
+    return { error: 'Not authenticated' }
+  }
+  logActionStart('resolveSwap', user.id, { swapId, decision })
 
   const supabase = createClient()
 
@@ -95,7 +138,10 @@ export async function resolveSwap(
     .select('role')
     .eq('id', user.id)
     .single() as { data: { role: string } | null; error: unknown }
-  if (!profile || profile.role !== 'manager') return { error: 'Manager access required' }
+  if (!profile || profile.role !== 'manager') {
+    logActionFailure('resolveSwap', user.id, 'Manager access required', { swapId })
+    return { error: 'Manager access required' }
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: swap } = await (supabase as any)
@@ -109,16 +155,26 @@ export async function resolveSwap(
         status: string; schedule_block_id: string
       } | null; error: unknown
     }
-  if (!swap) return { error: 'Swap request not found' }
-  if (swap.status !== 'pending') return { error: 'Swap is no longer pending' }
+  if (!swap) {
+    logActionFailure('resolveSwap', user.id, 'Swap request not found', { swapId })
+    return { error: 'Swap request not found' }
+  }
+  if (swap.status !== 'pending') {
+    logActionFailure('resolveSwap', user.id, 'Swap not pending', { swapId, status: swap.status })
+    return { error: 'Swap is no longer pending' }
+  }
 
   const { data: block } = await supabase
     .from('schedule_blocks')
     .select('status')
     .eq('id', swap.schedule_block_id)
     .single() as { data: { status: string } | null; error: unknown }
-  if (!block) return { error: 'Block not found' }
+  if (!block) {
+    logActionFailure('resolveSwap', user.id, 'Block not found', { swapId, blockId: swap.schedule_block_id })
+    return { error: 'Block not found' }
+  }
   if (!isSwapAllowed(block.status)) {
+    logActionFailure('resolveSwap', user.id, 'Block status guard rejected', { swapId, status: block.status })
     return { error: 'Cannot resolve swap for current block status' }
   }
 
@@ -133,7 +189,10 @@ export async function resolveSwap(
       actioned_by: user.id,
     })
     .eq('id', swapId)
-  if (updateErr) return { error: updateErr.message }
+  if (updateErr) {
+    logActionFailure('resolveSwap', user.id, updateErr.message, { swapId, decision })
+    return { error: updateErr.message }
+  }
 
   if (decision === 'approved') {
     // Fetch both shifts to get dates and lead info
@@ -149,7 +208,10 @@ export async function resolveSwap(
       .eq('id', swap.partner_shift_id)
       .single() as { data: { id: string; user_id: string; shift_date: string } | null; error: unknown }
 
-    if (!reqShift || !partShift) return { error: 'Could not fetch shift details' }
+    if (!reqShift || !partShift) {
+      logActionFailure('resolveSwap', user.id, 'Could not fetch shift details', { swapId })
+      return { error: 'Could not fetch shift details' }
+    }
 
     const reqGivesDate = reqShift.shift_date
     const partGivesDate = partShift.shift_date
@@ -200,5 +262,6 @@ export async function resolveSwap(
 
   revalidatePath('/swaps')
   revalidatePath('/schedule')
+  logActionSuccess('resolveSwap', user.id, { swapId, decision })
   return {}
 }

@@ -2,6 +2,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getServerUser } from '@/lib/auth'
+import { logActionFailure, logActionStart, logActionSuccess } from '@/lib/observability/action-log'
 
 /** Enter an OC/CI/CX/LE code for a working shift. Lead/charge or manager only. */
 export async function enterCode(
@@ -11,7 +12,11 @@ export async function enterCode(
   note: string | null
 ): Promise<{ error?: string }> {
   const user = await getServerUser()
-  if (!user) return { error: 'Not authenticated' }
+  if (!user) {
+    logActionFailure('enterCode', undefined, 'Not authenticated')
+    return { error: 'Not authenticated' }
+  }
+  logActionStart('enterCode', user.id, { blockId, shiftId, entryType })
 
   const supabase = createClient()
 
@@ -23,11 +28,18 @@ export async function enterCode(
     p_note: note,
   }) as { data: { success?: boolean; error?: string } | null; error: unknown }
 
-  if (error) return { error: String(error) }
-  if (data?.error) return { error: data.error }
+  if (error) {
+    logActionFailure('enterCode', user.id, String(error), { blockId, shiftId })
+    return { error: String(error) }
+  }
+  if (data?.error) {
+    logActionFailure('enterCode', user.id, data.error, { blockId, shiftId })
+    return { error: data.error }
+  }
 
   revalidatePath('/schedule')
   revalidatePath('/coverage')
+  logActionSuccess('enterCode', user.id, { blockId, shiftId, entryType })
   return {}
 }
 
@@ -36,7 +48,11 @@ export async function removeCode(
   entryId: string
 ): Promise<{ error?: string }> {
   const user = await getServerUser()
-  if (!user) return { error: 'Not authenticated' }
+  if (!user) {
+    logActionFailure('removeCode', undefined, 'Not authenticated')
+    return { error: 'Not authenticated' }
+  }
+  logActionStart('removeCode', user.id, { entryId })
 
   const supabase = createClient()
 
@@ -45,11 +61,18 @@ export async function removeCode(
     p_entry_id: entryId,
   }) as { data: { success?: boolean; error?: string } | null; error: unknown }
 
-  if (error) return { error: String(error) }
-  if (data?.error) return { error: data.error }
+  if (error) {
+    logActionFailure('removeCode', user.id, String(error), { entryId })
+    return { error: String(error) }
+  }
+  if (data?.error) {
+    logActionFailure('removeCode', user.id, data.error, { entryId })
+    return { error: data.error }
+  }
 
   revalidatePath('/schedule')
   revalidatePath('/coverage')
+  logActionSuccess('removeCode', user.id, { entryId })
   return {}
 }
 
@@ -58,7 +81,11 @@ export async function revertToFinal(
   blockId: string
 ): Promise<{ error?: string }> {
   const user = await getServerUser()
-  if (!user) return { error: 'Not authenticated' }
+  if (!user) {
+    logActionFailure('revertToFinal', undefined, 'Not authenticated')
+    return { error: 'Not authenticated' }
+  }
+  logActionStart('revertToFinal', user.id, { blockId })
 
   const supabase = createClient()
 
@@ -67,10 +94,17 @@ export async function revertToFinal(
     p_schedule_block_id: blockId,
   }) as { data: { success?: boolean; error?: string } | null; error: unknown }
 
-  if (error) return { error: String(error) }
-  if (data?.error) return { error: data.error }
+  if (error) {
+    logActionFailure('revertToFinal', user.id, String(error), { blockId })
+    return { error: String(error) }
+  }
+  if (data?.error) {
+    logActionFailure('revertToFinal', user.id, data.error, { blockId })
+    return { error: data.error }
+  }
 
   revalidatePath('/schedule')
   revalidatePath('/coverage')
+  logActionSuccess('revertToFinal', user.id, { blockId })
   return {}
 }

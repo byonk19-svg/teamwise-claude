@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getServerUser } from '@/lib/auth'
 import { isChangeRequestAllowed } from '@/lib/schedule/change-requests'
+import { logActionFailure, logActionStart, logActionSuccess } from '@/lib/observability/action-log'
 import type { Database } from '@/lib/types/database.types'
 
 type RequestType = Database['public']['Tables']['preliminary_change_requests']['Row']['request_type']
@@ -19,7 +20,11 @@ export async function submitChangeRequest(
   note: string | null
 ): Promise<{ error?: string }> {
   const user = await getServerUser()
-  if (!user) return { error: 'Not authenticated' }
+  if (!user) {
+    logActionFailure('submitChangeRequest', undefined, 'Not authenticated')
+    return { error: 'Not authenticated' }
+  }
+  logActionStart('submitChangeRequest', user.id, { blockId, shiftId, requestType })
 
   const supabase = createClient()
 
@@ -28,17 +33,24 @@ export async function submitChangeRequest(
     .select('role, employment_type')
     .eq('id', user.id)
     .single() as { data: { role: string; employment_type: string } | null; error: unknown }
-  if (!profile) return { error: 'Profile not found' }
+  if (!profile) {
+    logActionFailure('submitChangeRequest', user.id, 'Profile not found', { blockId })
+    return { error: 'Profile not found' }
+  }
 
   const { data: block } = await supabase
     .from('schedule_blocks')
     .select('status')
     .eq('id', blockId)
     .single() as { data: { status: string } | null; error: unknown }
-  if (!block) return { error: 'Block not found' }
+  if (!block) {
+    logActionFailure('submitChangeRequest', user.id, 'Block not found', { blockId })
+    return { error: 'Block not found' }
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (!isChangeRequestAllowed(block.status as any, profile.role as any, profile.employment_type as any)) {
+    logActionFailure('submitChangeRequest', user.id, 'Guard rejected', { blockId, shiftId, status: block.status })
     return { error: 'Change requests are only allowed for FT therapists on Preliminary blocks' }
   }
 
@@ -51,7 +63,10 @@ export async function submitChangeRequest(
     .eq('requester_id', user.id)
     .eq('status', 'pending')
     .maybeSingle() as { data: { id: string } | null; error: unknown }
-  if (existing) return { error: 'You already have a pending request for this shift' }
+  if (existing) {
+    logActionFailure('submitChangeRequest', user.id, 'Duplicate pending request', { shiftId })
+    return { error: 'You already have a pending request for this shift' }
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
@@ -65,9 +80,13 @@ export async function submitChangeRequest(
       status: 'pending',
     })
 
-  if (error) return { error: error.message }
+  if (error) {
+    logActionFailure('submitChangeRequest', user.id, error.message, { blockId, shiftId })
+    return { error: error.message }
+  }
 
   revalidatePath('/schedule')
+  logActionSuccess('submitChangeRequest', user.id, { blockId, shiftId, requestType })
   return {}
 }
 
@@ -82,7 +101,11 @@ export async function resolveChangeRequest(
   responseNote: string | null
 ): Promise<{ error?: string }> {
   const user = await getServerUser()
-  if (!user) return { error: 'Not authenticated' }
+  if (!user) {
+    logActionFailure('resolveChangeRequest', undefined, 'Not authenticated')
+    return { error: 'Not authenticated' }
+  }
+  logActionStart('resolveChangeRequest', user.id, { requestId, decision })
 
   const supabase = createClient()
 
@@ -91,7 +114,10 @@ export async function resolveChangeRequest(
     .select('role')
     .eq('id', user.id)
     .single() as { data: { role: string } | null; error: unknown }
-  if (!profile || profile.role !== 'manager') return { error: 'Manager access required' }
+  if (!profile || profile.role !== 'manager') {
+    logActionFailure('resolveChangeRequest', user.id, 'Manager access required', { requestId })
+    return { error: 'Manager access required' }
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: req } = await (supabase as any)
@@ -102,16 +128,26 @@ export async function resolveChangeRequest(
       data: { shift_id: string; request_type: string; status: string; schedule_block_id: string } | null
       error: unknown
     }
-  if (!req) return { error: 'Change request not found' }
-  if (req.status !== 'pending') return { error: 'Request is no longer pending' }
+  if (!req) {
+    logActionFailure('resolveChangeRequest', user.id, 'Change request not found', { requestId })
+    return { error: 'Change request not found' }
+  }
+  if (req.status !== 'pending') {
+    logActionFailure('resolveChangeRequest', user.id, 'Request not pending', { requestId, status: req.status })
+    return { error: 'Request is no longer pending' }
+  }
 
   const { data: block } = await supabase
     .from('schedule_blocks')
     .select('status')
     .eq('id', req.schedule_block_id)
     .single() as { data: { status: string } | null; error: unknown }
-  if (!block) return { error: 'Block not found' }
+  if (!block) {
+    logActionFailure('resolveChangeRequest', user.id, 'Block not found', { requestId, blockId: req.schedule_block_id })
+    return { error: 'Block not found' }
+  }
   if (block.status !== 'preliminary') {
+    logActionFailure('resolveChangeRequest', user.id, 'Block status guard rejected', { requestId, status: block.status })
     return { error: 'Cannot resolve requests unless block is still Preliminary' }
   }
 
@@ -126,7 +162,10 @@ export async function resolveChangeRequest(
     })
     .eq('id', requestId)
 
-  if (updateErr) return { error: updateErr.message }
+  if (updateErr) {
+    logActionFailure('resolveChangeRequest', user.id, updateErr.message, { requestId, decision })
+    return { error: updateErr.message }
+  }
 
   // If accepted + mark_off: update the shift
   if (decision === 'accepted' && req.request_type === 'mark_off') {
@@ -139,5 +178,6 @@ export async function resolveChangeRequest(
 
   revalidatePath('/schedule')
   revalidatePath('/schedule/inbox')
+  logActionSuccess('resolveChangeRequest', user.id, { requestId, decision })
   return {}
 }
