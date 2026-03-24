@@ -62,6 +62,7 @@ export function BlockStatusActions({ block, userRole, leadGapDates }: Props) {
         <>
           {canPostPreliminary(block.status) && (
             <button
+              type="button"
               onClick={handlePostPreliminary}
               disabled={isPending}
               className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50"
