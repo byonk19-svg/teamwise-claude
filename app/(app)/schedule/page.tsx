@@ -8,6 +8,7 @@ import { AvailabilityWindowControl } from '@/components/schedule/AvailabilityWin
 import { SubmissionTracker } from '@/components/availability/SubmissionTracker'
 import { ConstraintDiff, type DiffItem } from '@/components/schedule/ConstraintDiff'
 import { BlockStatusActions } from '@/components/schedule/BlockStatusActions'
+import { getLeadGapDates } from '@/lib/schedule/lead-assignment'
 import Link from 'next/link'
 import type { Database } from '@/lib/types/database.types'
 
@@ -101,6 +102,7 @@ export default async function SchedulePage({ searchParams }: PageProps) {
     .order('full_name', { ascending: true })
 
   const shifts = (shiftsData ?? []) as ShiftRow[]
+  const leadGapDates = getLeadGapDates(shifts)
   const therapists = (therapistsData ?? []) as UserRow[]
 
   // Fetch availability submissions for current block (manager view)
@@ -142,7 +144,7 @@ export default async function SchedulePage({ searchParams }: PageProps) {
             + New Block
           </Link>
         )}
-        <BlockStatusActions block={block} userRole={profile.role as 'manager' | 'therapist'} />
+        <BlockStatusActions block={block} userRole={profile.role as 'manager' | 'therapist'} leadGapDates={leadGapDates} />
       </div>
 
       {profile.role === 'therapist' && block.status === 'preliminary' && profile.employment_type === 'full_time' && (

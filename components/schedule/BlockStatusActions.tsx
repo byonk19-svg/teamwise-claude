@@ -27,11 +27,13 @@ const STATUS_COLORS: Record<BlockRow['status'], string> = {
 interface Props {
   block: BlockRow
   userRole: 'manager' | 'therapist'
+  leadGapDates: string[]
 }
 
-export function BlockStatusActions({ block, userRole }: Props) {
+export function BlockStatusActions({ block, userRole, leadGapDates }: Props) {
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  const [confirmingPublish, setConfirmingPublish] = useState(false)
 
   function handlePostPreliminary() {
     setError(null)
@@ -76,13 +78,45 @@ export function BlockStatusActions({ block, userRole }: Props) {
               >
                 View Inbox
               </Link>
-              <button
-                onClick={handlePostFinal}
-                disabled={isPending}
-                className="px-3 py-1.5 text-sm bg-green-700 text-white rounded-md hover:bg-green-800 disabled:opacity-50"
-              >
-                {isPending ? 'Publishing…' : 'Publish as Final'}
-              </button>
+
+              {confirmingPublish ? (
+                <div className="flex items-center gap-2 p-2 bg-pink-50 border border-pink-200 rounded-md">
+                  <span className="text-xs text-pink-800">
+                    {leadGapDates.length} date{leadGapDates.length !== 1 ? 's' : ''} missing a lead.
+                    Publish anyway?
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { setConfirmingPublish(false); handlePostFinal() }}
+                    disabled={isPending}
+                    className="px-2 py-1 text-xs bg-green-700 text-white rounded hover:bg-green-800 disabled:opacity-50"
+                  >
+                    Yes, publish
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingPublish(false)}
+                    className="px-2 py-1 text-xs border border-slate-300 rounded hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (leadGapDates.length > 0) {
+                      setConfirmingPublish(true)
+                    } else {
+                      handlePostFinal()
+                    }
+                  }}
+                  disabled={isPending}
+                  className="px-3 py-1.5 text-sm bg-green-700 text-white rounded-md hover:bg-green-800 disabled:opacity-50"
+                >
+                  {isPending ? 'Publishing…' : 'Publish as Final'}
+                </button>
+              )}
             </>
           )}
         </>
