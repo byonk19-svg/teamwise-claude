@@ -6,6 +6,9 @@ import { GridCell } from './GridCell'
 import { ShiftToggle } from './ShiftToggle'
 import { CellPanel } from './CellPanel'
 import { applyOptimisticUpdate } from '@/lib/schedule/optimistic'
+import { BulkLeadModal } from './BulkLeadModal'
+import { getLeadGapDates } from '@/lib/schedule/lead-assignment'
+import { canEditCell } from '@/lib/schedule/block-status'
 import type { Database } from '@/lib/types/database.types'
 
 type Shift = Database['public']['Tables']['shifts']['Row']
@@ -41,6 +44,7 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
   const [panelOpen, setPanelOpen] = useState(false)
   const [panelLeadCandidates, setPanelLeadCandidates] = useState<UserRow[]>([])
   const [panelCurrentLeadUserId, setPanelCurrentLeadUserId] = useState<string | null>(null)
+  const [showBulkModal, setShowBulkModal] = useState(false)
 
   const dates = useMemo(() => buildDates(block.start_date), [block.start_date])
   const weeks = useMemo(() => buildWeeks(dates), [dates])
@@ -70,6 +74,16 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
     }
     return s
   }, [shifts])
+
+  const leadGapDates = useMemo(
+    () => getLeadGapDates(shifts),
+    [shifts]
+  )
+
+  const leadQualifiedTherapists = useMemo(
+    () => therapists.filter(t => t.is_lead_qualified),
+    [therapists]
+  )
 
   // Current lead user_id per date
   const currentLeadByDate = useMemo(() => {
@@ -155,6 +169,15 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
       {/* Controls */}
       <div className="flex items-center gap-3">
         <ShiftToggle defaultShift={defaultShiftType} onToggle={setActiveShift} />
+        {userRole === 'manager' && canEditCell(blockStatus, userRole) && (
+          <button
+            type="button"
+            onClick={() => setShowBulkModal(true)}
+            className="px-3 py-1 text-xs border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50"
+          >
+            Bulk Assign Lead {leadGapDates.length > 0 && `(${leadGapDates.length} gaps)`}
+          </button>
+        )}
         <span className="text-sm text-slate-500">
           {format(new Date(block.start_date + 'T00:00:00'), 'MMM d')} –{' '}
           {format(new Date(block.end_date + 'T00:00:00'), 'MMM d, yyyy')}
@@ -323,6 +346,16 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
         currentLeadUserId={panelCurrentLeadUserId}
         onLeadUpdate={handleLeadUpdate}
       />
+
+      {showBulkModal && (
+        <BulkLeadModal
+          blockId={block.id}
+          gapDates={leadGapDates}
+          leadQualified={leadQualifiedTherapists}
+          onClose={() => setShowBulkModal(false)}
+          onComplete={() => setShifts(prev => [...prev])}
+        />
+      )}
     </div>
   )
 }
