@@ -1,28 +1,27 @@
 import { test, expect } from '@playwright/test'
+import { loginAsManager } from './helpers/auth'
 
 const hasAuthEnv = process.env.E2E_AUTH === 'true'
 
-async function loginAsManager(page: import('@playwright/test').Page) {
-  await page.goto('/login')
-  await page.getByLabel('Email').fill('manager@teamwise.dev')
-  await page.getByLabel('Password').fill('password123')
-  await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page).toHaveURL(/.*schedule/)
-}
+test.describe.configure({ mode: 'serial' })
 
 test.describe('Phase 5 operational flows', () => {
   test.skip(!hasAuthEnv, 'Set E2E_AUTH=true and seeded credentials to run authenticated flows')
 
   test('mobile week view opens operational bottom sheet', async ({ page }) => {
-    await loginAsManager(page)
     await page.setViewportSize({ width: 390, height: 844 })
+    await loginAsManager(page)
     await page.goto('/schedule')
 
-    // WeekView renders only on mobile.
-    await expect(page.getByText('Name')).toBeVisible()
+    // WeekView is md:hidden — use mobile width before navigation.
+    await expect(page.getByText('Name')).toBeVisible({ timeout: 15_000 })
 
-    const weekCell = page.locator('button:has(span.w-3.h-3.rounded-full)').first()
-    await expect(weekCell).toBeVisible()
+    // First grid cell can be disabled (out of block / no shift); use an enabled cell.
+    const weekCell = page
+      .locator('button:not([disabled])')
+      .filter({ has: page.locator('span.w-3.h-3.rounded-full') })
+      .first()
+    await expect(weekCell).toBeVisible({ timeout: 15_000 })
     await weekCell.click()
 
     const dialog = page.getByRole('dialog')
@@ -37,7 +36,9 @@ test.describe('Phase 5 operational flows', () => {
     await page.goto('/coverage')
 
     await expect(page.getByRole('heading', { name: 'Coverage' })).toBeVisible()
-    await expect(page.getByRole('columnheader', { name: 'Actual' })).toBeVisible()
+    await expect(page.locator('table').getByRole('columnheader', { name: 'Actual' })).toBeVisible({
+      timeout: 15_000,
+    })
   })
 
   test('manager can revert active block to final when active block exists', async ({ page }) => {
@@ -51,7 +52,8 @@ test.describe('Phase 5 operational flows', () => {
     }
 
     const revertButton = page.getByRole('button', { name: 'Revert to Final' }).first()
-    await expect(revertButton).toBeVisible()
+    await expect(revertButton).toBeVisible({ timeout: 15_000 })
+    await revertButton.scrollIntoViewIfNeeded()
     await revertButton.click()
 
     await expect(page.getByText('Revert to Final?')).toBeVisible()

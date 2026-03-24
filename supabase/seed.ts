@@ -37,6 +37,19 @@ const DATES = Array.from({ length: 42 }, (_, i) => addDays(BLOCK_START, i))
 async function seed() {
   console.log('🌱 Seeding Teamwise test data...\n')
 
+  const { data: existingManager } = await supabase
+    .from('users')
+    .select('id')
+    .eq('email', 'manager@teamwise.dev')
+    .maybeSingle()
+  if (existingManager) {
+    console.log('✅ Nothing to do — test data is already there.')
+    console.log('   (manager@teamwise.dev is already in the database.)')
+    console.log('   Log in with password123, or run E2E with E2E_AUTH=true.')
+    console.log('   To wipe and re-seed: remove rows / users in Supabase, then run npm run seed again.\n')
+    return
+  }
+
   // ── 1. Department ──────────────────────────────────────────
   const { data: dept, error: deptErr } = await supabase
     .from('departments')

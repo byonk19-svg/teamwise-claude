@@ -18,6 +18,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/availability',    label: 'Availability',     roles: ['manager', 'therapist'] },
   { href: '/swaps',           label: 'Swaps',            roles: ['manager', 'therapist'] },
   { href: '/coverage',        label: 'Coverage',         roles: ['manager'] },
+  { href: '/ops',             label: 'Ops',              roles: ['manager'] },
   { href: '/staff',           label: 'Staff',            roles: ['manager'] },
   { href: '/settings',        label: 'Settings',         roles: ['manager'] },
   { href: '/open-shifts',     label: 'Open Shifts',      roles: ['therapist'] },

@@ -13,9 +13,10 @@ Teamwise is a Respiratory Therapy department scheduling app. Managers build 6-we
 ```bash
 npm run dev          # Start dev server (port 3000)
 npm run build        # Production build
-npm test             # Vitest unit tests (67 tests as of Phase 4 complete)
-npm run test:e2e     # Playwright E2E (requires real .env.local)
-npm run seed         # Seed Supabase with test data
+npm test             # Vitest unit tests (90 tests as of Phase 6 complete)
+npm run test:e2e     # Playwright E2E (requires real .env.local; see Testing)
+npm run test:e2e:ui  # Playwright UI mode
+npm run seed         # Seed Supabase with test data (no-op if already seeded; see Seed Data)
 npm run lint         # ESLint
 ```
 
@@ -50,6 +51,8 @@ Day/Night shift color is controlled via a CSS custom property `--shift-color` se
 - Phase 2 client components: `ConstraintDiff`, `AvailabilityCalendar`, `BlockPicker`, `BlockCreateForm`, `AvailabilityWindowControl`, `SubmissionTracker`
 - Phase 3 client components: `BlockStatusActions`, `InboxList`, `OpenShiftsList`
 - Phase 4 client components: `BulkLeadModal`, `SwapInbox`, `CoverageHeatmap`
+- Phase 5 client components: `OperationalCodeEntry`, `WeekView`, `AlertBanner`, `AuditLog`
+- Phase 6 client components: `OpsFilters`, `OpsEventFeed`, `OpsRealtimeRefresh`, `OpsBlockHealthTable`
 
 ### Supabase RPC Typing
 Supabase client doesn't auto-type RPCs. Cast as `any` to call: `(supabase as any).rpc('rpc_name', { params })`. Return type must be cast manually.
@@ -91,11 +94,11 @@ The `await searchParams` pattern is Next.js 15/16 only and will cause runtime er
 
 **Supabase project:** `jcvlmwsiiikifdvaufqz`
 
-Key tables: `users`, `departments`, `schedule_blocks`, `shifts`, `coverage_thresholds`, `time_off_requests`, `availability_submissions`, `availability_entries`, `schedule_comments`, `swap_requests`
+Key tables: `users`, `departments`, `schedule_blocks`, `shifts`, `coverage_thresholds`, `time_off_requests`, `availability_submissions`, `availability_entries`, `schedule_comments`, `swap_requests`, `operational_entries`
 
-**Views:** `shift_planned_headcount` — per-date FT/PRN/Total planned counts used by CoverageHeatmap
+**Views:** `shift_planned_headcount` (planned counts for CoverageHeatmap); `shift_actual_headcount` (planned vs actual for active/completed blocks)
 
-**RPCs:** `copy_block(p_source_block_id, p_manager_id)` → new block id; `get_constraint_diff(p_new_block_id)` → `DiffItem[]` (user_id, full_name, shift_date, prior_cell_state, avail_entry_type); `assign_lead(p_schedule_block_id, p_shift_date, p_lead_user_id)` → `{ success?, error? }` — atomically clears all leads for date then sets the new one (validates `is_lead_qualified` AND `cell_state='working'`; pass `null` to clear)
+**RPCs:** `copy_block(p_source_block_id, p_manager_id)` → new block id; `get_constraint_diff(p_new_block_id)` → `DiffItem[]` (user_id, full_name, shift_date, prior_cell_state, avail_entry_type); `assign_lead(p_schedule_block_id, p_shift_date, p_lead_user_id)` → `{ success?, error? }` — atomically clears all leads for date then sets the new one (validates `is_lead_qualified` AND `cell_state='working'`; pass `null` to clear); Phase 5: `enter_operational_code`, `remove_operational_code`, `revert_to_final` (see migration `004_phase5_operational.sql`)
 
 All tables have RLS enabled. Broad authenticated-only policies (all phases so far).
 
@@ -103,8 +106,11 @@ All tables have RLS enabled. Broad authenticated-only policies (all phases so fa
 - `supabase/migrations/001_initial_schema.sql` — initial schema
 - `supabase/migrations/002_phase2_rpcs.sql` — `copy_block` and `get_constraint_diff` RPCs (applied)
 - `supabase/migrations/003_phase4_swaps.sql` — `swap_requests` table, `assign_lead` RPC, `shift_planned_headcount` view, pg_cron hourly expiry job (applied)
+- `supabase/migrations/004_phase5_operational.sql` — `operational_entries`, actuals view, RPCs, pg_cron auto-activate final→active (applied)
+- `supabase/migrations/005_phase5_rls_hardening.sql` — department-scoped RLS for `swap_requests` and `operational_entries` (applied)
 
 ### Seed Data (after running `npm run seed`)
+- If `manager@teamwise.dev` already exists in `public.users`, the seed script **exits successfully without changes** (safe to re-run).
 - Manager: `manager@teamwise.dev` / `password123`
 - Therapist: `jsmith@teamwise.dev` / `password123`
 - 1 dept, 10 FT therapists (3 lead-qualified), 5 PRN, 2 schedule blocks (Day + Night), 1,260 shift rows
@@ -123,8 +129,8 @@ SUPABASE_SERVICE_ROLE_KEY       # Secret key from API Keys page
 
 ## Testing
 
-- **Unit tests:** Vitest — `npm test`. Must stay at 67/67 passing before any commit.
-- **E2E tests:** Playwright — requires real `.env.local` credentials. Currently skipped in CI until credentials are configured.
+- **Unit tests:** Vitest — `npm test`. Keep all tests passing before any commit.
+- **E2E tests:** Playwright — requires real `.env.local` credentials and `E2E_AUTH=true` for authenticated specs. Use `loginAsManager` from `tests/e2e/helpers/auth.ts` (waits up to 60s for `/schedule`; throws with login alert text or env hint on failure). `tests/e2e/phase5-operational.spec.ts` runs **serial** within the file so revert/coverage/week tests do not race the same DB. `playwright.config.ts` uses extended timeouts and **one worker** locally so `next dev` is not overloaded; avoid running two servers on port 3000.
 - Vitest is configured to exclude `tests/e2e/**` — do not remove this exclusion.
 
 ---
@@ -142,6 +148,7 @@ SUPABASE_SERVICE_ROLE_KEY       # Secret key from API Keys page
 9. **Department-scoped RLS hardening (resolved)** — `swap_requests` and `operational_entries` policies are department-scoped via migration `005_phase5_rls_hardening.sql`.
 10. **`schedule_blocks` `.update()` returns `never`** — self-referential Database type issue in generated client. Always use `(supabase as any).from('schedule_blocks').update(...)` for block status mutations.
 11. **Set spread downlevel iteration** — `[...mySet]` fails with `TS2802` in this tsconfig. Always use `Array.from(mySet)` instead when spreading Sets or Map iterators.
+12. **E2E `/ops` drill-down** — On desktop, the sidebar includes a link named “Schedule”; table-scoped locators in `tests/e2e/ops.spec.ts` avoid clicking the nav link (which omits `?blockId=`).
 
 ---
 
@@ -150,5 +157,7 @@ SUPABASE_SERVICE_ROLE_KEY       # Secret key from API Keys page
 - **Phase 1 (Foundation):** Complete — schema, auth, app shell, calendar grid, cell panel, PWA foundation
 - **Phase 2 (Availability & Schedule Building):** Complete — availability windows, FT/PRN submission, copy-from-prior-block, constraint diff, cell state editing with optimistic updates
 - **Phase 3 (Preliminary / Final Lifecycle):** Complete — types, block-status helpers, postPreliminary/postFinal actions, BlockStatusActions, BlockPicker groupings, CellPanel prop threading, FT change request form, PRN interest actions, manager inbox, PRN open shifts page.
-- **Phase 4 (Lead Assignment & Shift Swaps):** Complete — `swap_requests` table + `assign_lead` RPC (migration 003), lead eligibility/gap helpers + tests, swap-allowed helper + tests, `assignLead` server action, GridCell lead-gap dot, ScheduleGrid lead tracking + bulk modal trigger, CellPanel lead dropdown + swap request form, BlockStatusActions lead-gap warning, BulkLeadModal, `submitSwap`/`resolveSwap` actions, `/swaps` page + SwapInbox, `/coverage` page + CoverageHeatmap. 67 unit tests passing.
-- **Phase 5 (Operational Layer):** Not started — see below for details.
+- **Phase 4 (Lead Assignment & Shift Swaps):** Complete — `swap_requests` table + `assign_lead` RPC (migration 003), lead eligibility/gap helpers + tests, swap-allowed helper + tests, `assignLead` server action, GridCell lead-gap dot, ScheduleGrid lead tracking + bulk modal trigger, CellPanel lead dropdown + swap request form, BlockStatusActions lead-gap warning, BulkLeadModal, `submitSwap`/`resolveSwap` actions, `/swaps` page + SwapInbox, `/coverage` page + CoverageHeatmap.
+- **Phase 5 (Operational Layer):** Complete — `operational_entries` table/RPCs + RLS, shift actuals view, operational code entry in `CellPanel` + mobile `WeekView`, coverage actuals + alerts, audit log page + CSV export, revert-to-final flow, and hardening/observability updates.
+- **Phase 6 (Operational Dashboard):** Complete — manager-only `/ops` read-only dashboard: KPI cards (aggregated + drill-downs), filters (shift type, block, date range), **Block health** table (per-block risk metrics, Schedule/Focus links), consolidated event feed with drill-downs, Supabase Realtime refresh (operational entries, swaps, change requests, shifts, PRN interest batched by `shift_id`). Playwright smoke in `tests/e2e/ops.spec.ts` when `E2E_AUTH=true`.
+- **Phase 7+:** Not defined in-repo — candidates: therapist “today” hub, notifications, richer exports, `/staff` & `/settings` depth, CI-hardened E2E with isolated DB.
