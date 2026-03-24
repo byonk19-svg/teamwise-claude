@@ -96,11 +96,24 @@ export async function resolveChangeRequest(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: req } = await (supabase as any)
     .from('preliminary_change_requests')
-    .select('shift_id, request_type, status')
+    .select('shift_id, request_type, status, schedule_block_id')
     .eq('id', requestId)
-    .single() as { data: { shift_id: string; request_type: string; status: string } | null; error: unknown }
+    .single() as {
+      data: { shift_id: string; request_type: string; status: string; schedule_block_id: string } | null
+      error: unknown
+    }
   if (!req) return { error: 'Change request not found' }
   if (req.status !== 'pending') return { error: 'Request is no longer pending' }
+
+  const { data: block } = await supabase
+    .from('schedule_blocks')
+    .select('status')
+    .eq('id', req.schedule_block_id)
+    .single() as { data: { status: string } | null; error: unknown }
+  if (!block) return { error: 'Block not found' }
+  if (block.status !== 'preliminary') {
+    return { error: 'Cannot resolve requests unless block is still Preliminary' }
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error: updateErr } = await (supabase as any)

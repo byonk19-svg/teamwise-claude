@@ -138,8 +138,8 @@ SUPABASE_SERVICE_ROLE_KEY       # Secret key from API Keys page
 5. **next.config.js** — CommonJS format (not ESM). `fallbacks.document` removed due to workbox version incompatibility with `@ducanh2912/next-pwa`.
 6. **Middleware redirects** — Must copy cookies from `supabaseResponse` onto the redirect response, or the session is dropped.
 7. **`classifyBlock` parameter order** — signature is `classifyBlock(endDate, startDate, todayStr)` (end before start). Unconventional but intentional; all callers pass in this order.
-8. **Phase 3 known tech debt** — `resolveChangeRequest` and `resolvePrnInterest` do not re-verify block status before mutating shift `cell_state`. Safe with single-dept RLS but should be addressed before multi-dept expansion.
-9. **Phase 4 known tech debt** — `resolveSwap` in `app/actions/swap-requests.ts` does not re-verify block status before swapping `cell_state`. Also, `swap_requests` RLS policies are department-unscoped (safe now with single-dept but must be tightened before multi-dept). Both issues match the Phase 3 tech debt pattern.
+8. **Status recheck hardening (resolved)** — `resolveChangeRequest`, `resolvePrnInterest`, and `resolveSwap` now re-verify the current block status before mutating `shifts.cell_state`.
+9. **Department-scoped RLS hardening (resolved)** — `swap_requests` and `operational_entries` policies are department-scoped via migration `005_phase5_rls_hardening.sql`.
 10. **`schedule_blocks` `.update()` returns `never`** — self-referential Database type issue in generated client. Always use `(supabase as any).from('schedule_blocks').update(...)` for block status mutations.
 11. **Set spread downlevel iteration** — `[...mySet]` fails with `TS2802` in this tsconfig. Always use `Array.from(mySet)` instead when spreading Sets or Map iterators.
 

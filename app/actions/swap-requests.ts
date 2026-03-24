@@ -112,6 +112,16 @@ export async function resolveSwap(
   if (!swap) return { error: 'Swap request not found' }
   if (swap.status !== 'pending') return { error: 'Swap is no longer pending' }
 
+  const { data: block } = await supabase
+    .from('schedule_blocks')
+    .select('status')
+    .eq('id', swap.schedule_block_id)
+    .single() as { data: { status: string } | null; error: unknown }
+  if (!block) return { error: 'Block not found' }
+  if (!isSwapAllowed(block.status)) {
+    return { error: 'Cannot resolve swap for current block status' }
+  }
+
   // Update swap status
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error: updateErr } = await (supabase as any)

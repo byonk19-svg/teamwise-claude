@@ -82,6 +82,23 @@ export async function resolvePrnInterest(
   if (!interest) return { error: 'Interest record not found' }
   if (interest.status !== 'pending') return { error: 'Already resolved' }
 
+  const { data: shift } = await supabase
+    .from('shifts')
+    .select('schedule_block_id')
+    .eq('id', interest.shift_id)
+    .single() as { data: { schedule_block_id: string } | null; error: unknown }
+  if (!shift) return { error: 'Shift not found' }
+
+  const { data: block } = await supabase
+    .from('schedule_blocks')
+    .select('status')
+    .eq('id', shift.schedule_block_id)
+    .single() as { data: { status: string } | null; error: unknown }
+  if (!block) return { error: 'Block not found' }
+  if (block.status !== 'preliminary') {
+    return { error: 'Cannot resolve PRN interest unless block is still Preliminary' }
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error: updateErr } = await (supabase as any)
     .from('prn_shift_interest')
