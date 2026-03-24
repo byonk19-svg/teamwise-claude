@@ -81,7 +81,7 @@ function ChangeReqItem({ req }: { req: ChangeReqWithContext }) {
           {fmtDate(req.shift.shift_date)} · {REQ_TYPE_LABELS[req.request_type]}
         </p>
         {req.note && (
-          <p className="text-xs text-slate-600 mt-1 italic">"{req.note}"</p>
+          <p className="text-xs text-slate-600 mt-1 italic">&ldquo;{req.note}&rdquo;</p>
         )}
       </div>
       <input

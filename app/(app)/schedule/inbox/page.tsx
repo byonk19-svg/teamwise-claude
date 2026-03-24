@@ -70,13 +70,14 @@ export default async function InboxPage({ searchParams }: PageProps) {
   const { data: blockShifts } = await supabase
     .from('shifts')
     .select('id')
-    .eq('schedule_block_id', blockId)
+    .eq('schedule_block_id', blockId) as { data: { id: string }[] | null; error: unknown }
   const shiftIds = (blockShifts ?? []).map(s => s.id)
 
   // Pending PRN interest for shifts in this block
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const supabaseAny = supabase as any
   const { data: prnInterestRaw } = shiftIds.length > 0
-    ? await (supabase as any)
+    ? await supabaseAny
         .from('prn_shift_interest')
         .select('*, user:user_id(full_name), shift:shift_id(shift_date, cell_state)')
         .in('shift_id', shiftIds)

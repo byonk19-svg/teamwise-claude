@@ -106,6 +106,7 @@ export async function updateCellState(
       .select('status')
       .eq('id', shiftRow.schedule_block_id)
       .single() as { data: { status: string } | null; error: unknown }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (blockRow && !canEditCell(blockRow.status as any, 'manager')) {
       return { error: 'Cannot edit cells on a published block' }
     }
@@ -152,7 +153,8 @@ export async function openAvailabilityWindow(
     return { error: 'Availability window has already been opened for this block' }
   }
 
-  const { error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
     .from('schedule_blocks')
     .update({
       availability_window_open: new Date().toISOString(),
@@ -185,11 +187,13 @@ export async function postPreliminary(blockId: string): Promise<{ error?: string
     .select('status')
     .eq('id', blockId)
     .single() as { data: { status: string } | null; error: unknown }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (!block || !canPostPreliminary(block.status as any)) {
     return { error: 'Block must be in preliminary_draft status' }
   }
 
-  const { error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
     .from('schedule_blocks')
     .update({ status: 'preliminary' })
     .eq('id', blockId)
@@ -223,7 +227,8 @@ export async function postFinal(blockId: string): Promise<{ error?: string }> {
     return { error: 'Block must be in Preliminary status to publish as Final' }
   }
 
-  const { error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
     .from('schedule_blocks')
     .update({
       status: 'final',

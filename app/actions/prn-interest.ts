@@ -33,6 +33,7 @@ export async function submitPrnInterest(
     .single() as { data: { status: string } | null; error: unknown }
   if (!block) return { error: 'Block not found' }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (!isPrnInterestAllowed(block.status as any, profile.role as any, profile.employment_type as any)) {
     return { error: 'PRN interest is only allowed for PRN therapists on Preliminary blocks' }
   }

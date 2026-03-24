@@ -37,6 +37,7 @@ export async function submitChangeRequest(
     .single() as { data: { status: string } | null; error: unknown }
   if (!block) return { error: 'Block not found' }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (!isChangeRequestAllowed(block.status as any, profile.role as any, profile.employment_type as any)) {
     return { error: 'Change requests are only allowed for FT therapists on Preliminary blocks' }
   }
