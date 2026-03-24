@@ -47,14 +47,14 @@ export default async function AvailabilitySubmitPage({ params }: PageProps) {
     .select('id')
     .eq('schedule_block_id', block.id)
     .eq('user_id', user.id)
-    .single()
+    .single() as { data: { id: string } | null; error: unknown }
 
   const existing: Record<string, EntryType> = {}
   if (submissionData) {
     const { data: entriesData } = await supabase
       .from('availability_entries')
       .select('entry_date, entry_type')
-      .eq('submission_id', submissionData.id)
+      .eq('submission_id', submissionData.id) as { data: { entry_date: string; entry_type: string }[] | null; error: unknown }
     for (const e of (entriesData ?? [])) {
       existing[e.entry_date] = e.entry_type as EntryType
     }

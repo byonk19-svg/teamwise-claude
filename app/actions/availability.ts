@@ -24,7 +24,7 @@ export async function submitAvailability(
     .from('schedule_blocks')
     .select('availability_window_open, availability_window_close')
     .eq('id', blockId)
-    .single()
+    .single() as { data: { availability_window_open: string | null; availability_window_close: string | null } | null; error: unknown }
 
   if (!block) return { error: 'Block not found' }
 
@@ -41,19 +41,21 @@ export async function submitAvailability(
   }
 
   // Upsert the submission record
-  const { data: submission, error: subErr } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: submission, error: subErr } = await (supabase as any)
     .from('availability_submissions')
     .upsert(
       { schedule_block_id: blockId, user_id: user.id },
       { onConflict: 'schedule_block_id,user_id' }
     )
     .select('id')
-    .single()
+    .single() as { data: { id: string } | null; error: { message: string } | null }
 
   if (subErr || !submission) return { error: subErr?.message ?? 'Submission failed' }
 
   // Delete all existing entries for this submission, then insert fresh
-  await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase as any)
     .from('availability_entries')
     .delete()
     .eq('submission_id', submission.id)
@@ -66,9 +68,10 @@ export async function submitAvailability(
       note: e.note ?? null,
     }))
 
-    const { error: entriesErr } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: entriesErr } = await (supabase as any)
       .from('availability_entries')
-      .insert(rows)
+      .insert(rows) as { error: { message: string } | null }
 
     if (entriesErr) return { error: entriesErr.message }
   }

@@ -34,3 +34,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# claude code
+.claude/
+
+# test artifacts
+/playwright-report/
+/test-results/
+
+# supabase temp
+supabase/.temp/
+
+# pwa generated service worker files
+/public/sw.js
+/public/swe-worker-*.js
+/public/workbox-*.js
