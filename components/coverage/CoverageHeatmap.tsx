@@ -5,11 +5,14 @@ import { format, addDays } from 'date-fns'
 import type { Database } from '@/lib/types/database.types'
 
 type HeadcountRow = Database['public']['Views']['shift_planned_headcount']['Row']
+type ActualHeadcountRow = Database['public']['Views']['shift_actual_headcount']['Row']
 
 interface Props {
   headcount: HeadcountRow[]
   leadGapDates: Set<string>
   blockStartDate: string
+  actualHeadcount: ActualHeadcountRow[]
+  blockStatus: string
 }
 
 function cellBg(total: number): string {
@@ -18,7 +21,7 @@ function cellBg(total: number): string {
   return 'bg-green-100 text-green-800'
 }
 
-export function CoverageHeatmap({ headcount, leadGapDates, blockStartDate }: Props) {
+export function CoverageHeatmap({ headcount, leadGapDates, blockStartDate, actualHeadcount, blockStatus }: Props) {
   const dates = useMemo(() => {
     const start = new Date(blockStartDate + 'T00:00:00')
     return Array.from({ length: 42 }, (_, i) => format(addDays(start, i), 'yyyy-MM-dd'))
@@ -29,6 +32,12 @@ export function CoverageHeatmap({ headcount, leadGapDates, blockStartDate }: Pro
     for (const row of headcount) m.set(row.shift_date, row)
     return m
   }, [headcount])
+  const actualByDate = useMemo(() => {
+    const m = new Map<string, ActualHeadcountRow>()
+    for (const row of actualHeadcount) m.set(row.shift_date, row)
+    return m
+  }, [actualHeadcount])
+  const showActual = true
 
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
@@ -38,7 +47,10 @@ export function CoverageHeatmap({ headcount, leadGapDates, blockStartDate }: Pro
             <th className="px-3 py-2 text-left text-slate-500 font-medium w-16">Date</th>
             <th className="px-2 py-2 text-center text-slate-500 font-medium">FT</th>
             <th className="px-2 py-2 text-center text-slate-500 font-medium">PRN</th>
-            <th className="px-2 py-2 text-center text-slate-500 font-medium">Total</th>
+            <th className="px-2 py-2 text-center text-slate-500 font-medium">Planned</th>
+            {showActual && (
+              <th className="px-2 py-2 text-center text-slate-500 font-medium">Actual</th>
+            )}
             <th className="px-2 py-2 text-center text-slate-500 font-medium">Lead</th>
           </tr>
         </thead>
@@ -59,6 +71,17 @@ export function CoverageHeatmap({ headcount, leadGapDates, blockStartDate }: Pro
                 <td className={`px-2 py-1.5 text-center font-semibold rounded ${hasWorking ? cellBg(total) : 'text-slate-400'}`}>
                   {total}
                 </td>
+                {showActual && (() => {
+                  const actual = actualByDate.get(date)
+                  const showActualValue = blockStatus === 'active' || blockStatus === 'completed'
+                  const actualTotal = actual?.total_actual ?? total
+                  const hasAnyEntry = actual ? actual.total_actual < actual.total_planned : false
+                  return (
+                    <td className={`px-2 py-1.5 text-center font-semibold rounded ${hasWorking && hasAnyEntry ? cellBg(actualTotal) : 'text-slate-400'}`}>
+                      {showActualValue ? actualTotal : <span className="text-slate-300">-</span>}
+                    </td>
+                  )
+                })()}
                 <td className="px-2 py-1.5 text-center">
                   {hasWorking ? (
                     hasLeadGap ? (

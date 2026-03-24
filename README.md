@@ -1,36 +1,47 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Teamwise
 
-## Getting Started
+Teamwise is a respiratory therapy scheduling app for building and operating 6-week Day/Night blocks.
 
-First, run the development server:
+## Stack
+
+- Next.js 14 (App Router) + TypeScript
+- Supabase (Auth, Postgres, RLS, Realtime)
+- Tailwind CSS + shadcn/ui
+- Vitest + Playwright
+
+## Local Development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Core Commands
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run dev        # run local app
+npm test           # unit tests
+npx tsc --noEmit   # typecheck
+npm run build      # production build check
+npm run lint       # lint
+npm run seed       # seed local/dev Supabase data
+```
 
-## Learn More
+## Phase 5 Notes (Operational Layer)
 
-To learn more about Next.js, take a look at the following resources:
+- Mobile WeekView supports in-shift operational code entry (`OC`, `CI`, `CX`, `LE`) via bottom sheet.
+- Coverage page shows planned + actual headcount and live alert hooks.
+- Completed blocks expose an audit log route at `/audit/[blockId]` with CSV export.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Troubleshooting
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+If UI interactions stop working after code changes (for example, cell taps do nothing, coverage content disappears, or `/_next/static/chunks/*` returns 404):
 
-## Deploy on Vercel
+1. Stop the running dev server.
+2. Clear build output (`.next`).
+3. Restart with `npm run dev`.
+4. Hard refresh the browser.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This usually resolves stale chunk/hydration mismatch during local development.

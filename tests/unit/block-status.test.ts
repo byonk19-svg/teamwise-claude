@@ -6,6 +6,8 @@ import {
   isBlockReadOnly,
   canPostPreliminary,
   canPublishFinal,
+  canActivateBlock,
+  canRevertToFinal,
 } from '@/lib/schedule/block-status'
 
 describe('classifyBlock', () => {
@@ -65,5 +67,33 @@ describe('canPublishFinal', () => {
     expect(canPublishFinal('preliminary')).toBe(true)
     expect(canPublishFinal('preliminary_draft')).toBe(false)
     expect(canPublishFinal('final')).toBe(false)
+  })
+})
+
+describe('canActivateBlock', () => {
+  it('returns true for final status', () => {
+    expect(canActivateBlock('final')).toBe(true)
+  })
+
+  it('returns false for active status', () => {
+    expect(canActivateBlock('active')).toBe(false)
+  })
+
+  it('returns false for preliminary_draft', () => {
+    expect(canActivateBlock('preliminary_draft')).toBe(false)
+  })
+})
+
+describe('canRevertToFinal', () => {
+  it('returns true for active status', () => {
+    expect(canRevertToFinal('active')).toBe(true)
+  })
+
+  it('returns false for final status', () => {
+    expect(canRevertToFinal('final')).toBe(false)
+  })
+
+  it('returns false for completed status', () => {
+    expect(canRevertToFinal('completed')).toBe(false)
   })
 })

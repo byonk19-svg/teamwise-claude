@@ -12,11 +12,13 @@ import { isChangeRequestAllowed } from '@/lib/schedule/change-requests'
 import { submitChangeRequest } from '@/app/actions/change-requests'
 import { submitSwap } from '@/app/actions/swap-requests'
 import { isSwapAllowed } from '@/lib/schedule/swap-requests'
+import { OperationalCodeEntry } from './OperationalCodeEntry'
 
 type Shift = Database['public']['Tables']['shifts']['Row']
 type UserRow = Database['public']['Tables']['users']['Row']
 type CellState = Shift['cell_state']
 type ChangeReqType = Database['public']['Tables']['preliminary_change_requests']['Row']['request_type']
+type OperationalEntry = Database['public']['Tables']['operational_entries']['Row']
 
 const STATE_LABELS: Record<CellState, string> = {
   working:      'Working',
@@ -43,9 +45,12 @@ interface Props {
   onLeadUpdate: (date: string, newLeadUserId: string | null) => void
   workingShiftsByUser: Map<string, Array<{ shiftId: string; date: string }>>
   allTherapists: UserRow[]
+  operationalEntries: OperationalEntry[]
+  blockStart: string
+  isUserLead: boolean
 }
 
-export function CellPanel({ open, onClose, shift, date, user, userRole, onCellStateUpdate, blockStatus, blockId, currentUserId, leadCandidates, currentLeadUserId, onLeadUpdate, workingShiftsByUser, allTherapists }: Props) {
+export function CellPanel({ open, onClose, shift, date, user, userRole, onCellStateUpdate, blockStatus, blockId, currentUserId, leadCandidates, currentLeadUserId, onLeadUpdate, workingShiftsByUser, allTherapists, operationalEntries, blockStart, isUserLead }: Props) {
   const [isPending, startTransition] = useTransition()
   const [editError, setEditError] = useState<string | null>(null)
   const [showChangeReqForm, setShowChangeReqForm] = useState(false)
@@ -349,6 +354,21 @@ export function CellPanel({ open, onClose, shift, date, user, userRole, onCellSt
               )}
             </div>
           )}
+
+        {shift && state === 'working' && (
+          <OperationalCodeEntry
+            blockId={blockId}
+            shiftId={shift.id}
+            shiftDate={date}
+            blockStart={blockStart}
+            blockStatus={blockStatus}
+            userRole={userRole}
+            isUserLead={isUserLead}
+            currentUserId={currentUserId}
+            entries={operationalEntries}
+            onUpdate={() => {}}
+          />
+        )}
       </SheetContent>
     </Sheet>
   )

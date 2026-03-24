@@ -8,6 +8,7 @@ import { AvailabilityWindowControl } from '@/components/schedule/AvailabilityWin
 import { SubmissionTracker } from '@/components/availability/SubmissionTracker'
 import { ConstraintDiff, type DiffItem } from '@/components/schedule/ConstraintDiff'
 import { BlockStatusActions } from '@/components/schedule/BlockStatusActions'
+import { WeekView } from '@/components/schedule/WeekView'
 import { getLeadGapDates } from '@/lib/schedule/lead-assignment'
 import Link from 'next/link'
 import type { Database } from '@/lib/types/database.types'
@@ -16,6 +17,7 @@ type UserRow = Database['public']['Tables']['users']['Row']
 type BlockRow = Database['public']['Tables']['schedule_blocks']['Row']
 type ShiftRow = Database['public']['Tables']['shifts']['Row']
 type SubmissionRow = Database['public']['Tables']['availability_submissions']['Row']
+type OperationalEntryRow = Database['public']['Tables']['operational_entries']['Row']
 
 interface PageProps {
   searchParams: { blockId?: string; shift?: string }
@@ -105,6 +107,23 @@ export default async function SchedulePage({ searchParams }: PageProps) {
   const leadGapDates = getLeadGapDates(shifts)
   const therapists = (therapistsData ?? []) as UserRow[]
 
+  let operationalEntries: OperationalEntryRow[] = []
+  if (block.status === 'active') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let entriesQuery = (supabase as any)
+      .from('operational_entries')
+      .select('*')
+      .eq('schedule_block_id', block.id)
+      .is('removed_at', null)
+
+    if (profile.role === 'therapist') {
+      entriesQuery = entriesQuery.eq('user_id', user.id)
+    }
+
+    const { data: entriesData } = await entriesQuery as { data: OperationalEntryRow[] | null; error: unknown }
+    operationalEntries = (entriesData ?? []) as OperationalEntryRow[]
+  }
+
   // Fetch availability submissions for current block (manager view)
   let submissions: SubmissionRow[] = []
   if (profile.role === 'manager') {
@@ -126,6 +145,15 @@ export default async function SchedulePage({ searchParams }: PageProps) {
 
   // Build a Set of "userId:date" keys for O(1) lookup in GridCell
   const conflictedCells = new Set(diff.map(d => `${d.user_id}:${d.shift_date}`))
+  const operationalEntriesByShiftId = new Map<string, OperationalEntryRow[]>()
+  for (const e of operationalEntries) {
+    const arr = operationalEntriesByShiftId.get(e.shift_id) ?? []
+    arr.push(e)
+    operationalEntriesByShiftId.set(e.shift_id, arr)
+  }
+  const isUserLead = profile.role === 'manager'
+    ? false
+    : shifts.some(s => s.lead_user_id === user.id)
 
   return (
     <div className="flex flex-col gap-3">
@@ -165,16 +193,30 @@ export default async function SchedulePage({ searchParams }: PageProps) {
 
       {diff.length > 0 && <ConstraintDiff diff={diff} />}
 
-      <ScheduleGrid
+      <div className="hidden md:block">
+        <ScheduleGrid
+          block={block}
+          shifts={shifts}
+          therapists={therapists}
+          defaultShiftType={activeShift}
+          userRole={profile.role as 'manager' | 'therapist'}
+          conflictedCells={conflictedCells}
+          currentUserId={user.id}
+          blockStatus={block.status}
+          blockId={block.id}
+          operationalEntriesByShiftId={operationalEntriesByShiftId}
+          blockStart={block.start_date}
+        />
+      </div>
+
+      <WeekView
         block={block}
         shifts={shifts}
         therapists={therapists}
-        defaultShiftType={activeShift}
-        userRole={profile.role as 'manager' | 'therapist'}
-        conflictedCells={conflictedCells}
         currentUserId={user.id}
-        blockStatus={block.status}
-        blockId={block.id}
+        userRole={profile.role as 'manager' | 'therapist'}
+        operationalEntriesByShiftId={operationalEntriesByShiftId}
+        isUserLead={isUserLead}
       />
 
       {/* Manager availability panel */}

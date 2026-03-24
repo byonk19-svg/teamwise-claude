@@ -1982,3 +1982,10 @@ git commit -m "fix: resolve build errors from Phase 5 integration"
 - Manager can revert an Active block back to Final with a confirmation step
 - Completed blocks have a full operational log at `/audit/[blockId]` with CSV export
 - `npm run build` exits 0, `npm test` shows 83/83 PASS
+
+---
+
+## Post-Implementation Notes
+
+- Mobile layout behavior depends on local client chunk freshness during development. If interactions appear non-responsive while markup is visible, check for `/_next/static/chunks/*` 404 responses and restart local dev after clearing `.next`.
+- Coverage now keeps an `Actual` column visible for consistency; values are shown for `active`/`completed` blocks and rendered as `-` for earlier statuses.

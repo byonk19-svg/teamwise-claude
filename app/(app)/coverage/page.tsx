@@ -3,12 +3,14 @@ import { redirect } from 'next/navigation'
 import { getServerUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { CoverageHeatmap } from '@/components/coverage/CoverageHeatmap'
+import { AlertBanner } from '@/components/coverage/AlertBanner'
 import Link from 'next/link'
 import type { Database } from '@/lib/types/database.types'
 
 type BlockRow = Database['public']['Tables']['schedule_blocks']['Row']
 type ShiftRow = Database['public']['Tables']['shifts']['Row']
 type HeadcountRow = Database['public']['Views']['shift_planned_headcount']['Row']
+type ActualHeadcountRow = Database['public']['Views']['shift_actual_headcount']['Row']
 
 export default async function CoveragePage({
   searchParams,
@@ -83,6 +85,15 @@ export default async function CoveragePage({
 
   const headcount = (headcountData ?? []) as HeadcountRow[]
   const shifts = (shiftsData ?? []) as Pick<ShiftRow, 'shift_date' | 'lead_user_id' | 'cell_state'>[]
+  let actualHeadcount: ActualHeadcountRow[] = []
+  if (block.status === 'active' || block.status === 'completed') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: actualData } = await (supabase as any)
+      .from('shift_actual_headcount')
+      .select('*')
+      .eq('schedule_block_id', block.id) as { data: ActualHeadcountRow[] | null; error: unknown }
+    actualHeadcount = (actualData ?? []) as ActualHeadcountRow[]
+  }
 
   // Build lead-gap set (dates with working shifts but no lead)
   const leadDates = new Set(shifts.filter(s => s.lead_user_id !== null).map(s => s.shift_date))
@@ -122,10 +133,28 @@ export default async function CoveragePage({
         <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-pink-400 inline-block" /> no lead</span>
       </div>
 
+      {block.status === 'active' && (
+        <AlertBanner
+          blockId={block.id}
+          initialActualHeadcount={actualHeadcount}
+        />
+      )}
+
+      {block.status === 'completed' && (
+        <Link
+          href={`/audit/${block.id}`}
+          className="text-sm text-slate-600 underline hover:text-slate-900"
+        >
+          View Audit Log →
+        </Link>
+      )}
+
       <CoverageHeatmap
         headcount={headcount}
         leadGapDates={leadGapDates}
         blockStartDate={block.start_date}
+        actualHeadcount={actualHeadcount}
+        blockStatus={block.status}
       />
     </div>
   )

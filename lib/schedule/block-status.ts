@@ -37,3 +37,13 @@ export function canPostPreliminary(status: BlockStatus): boolean {
 export function canPublishFinal(status: BlockStatus): boolean {
   return status === 'preliminary'
 }
+
+/** pg_cron auto-transitions final blocks to active; this helper reflects that logic. */
+export function canActivateBlock(status: BlockStatus): boolean {
+  return status === 'final'
+}
+
+/** Manager can revert an active block back to Final. */
+export function canRevertToFinal(status: BlockStatus): boolean {
+  return status === 'active'
+}

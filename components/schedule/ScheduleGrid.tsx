@@ -13,6 +13,7 @@ import type { Database } from '@/lib/types/database.types'
 
 type Shift = Database['public']['Tables']['shifts']['Row']
 type UserRow = Database['public']['Tables']['users']['Row']
+type OperationalEntry = Database['public']['Tables']['operational_entries']['Row']
 
 interface Props {
   block: Database['public']['Tables']['schedule_blocks']['Row']
@@ -24,6 +25,8 @@ interface Props {
   blockStatus: Database['public']['Tables']['schedule_blocks']['Row']['status']
   blockId: string
   currentUserId: string
+  operationalEntriesByShiftId: Map<string, OperationalEntry[]>
+  blockStart: string
 }
 
 function buildDates(startDate: string): string[] {
@@ -35,7 +38,7 @@ function buildWeeks(dates: string[]): string[][] {
   return Array.from({ length: 6 }, (_, i) => dates.slice(i * 7, i * 7 + 7))
 }
 
-export function ScheduleGrid({ block, shifts: initialShifts, therapists, defaultShiftType, userRole, conflictedCells, blockStatus, blockId, currentUserId }: Props) {
+export function ScheduleGrid({ block, shifts: initialShifts, therapists, defaultShiftType, userRole, conflictedCells, blockStatus, blockId, currentUserId, operationalEntriesByShiftId, blockStart }: Props) {
   const [activeShift, setActiveShift] = useState<'day' | 'night'>(defaultShiftType)
   const [shifts, setShifts] = useState<Shift[]>(initialShifts)
   const [panelShift, setPanelShift] = useState<Shift | undefined>()
@@ -83,6 +86,10 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
   const leadQualifiedTherapists = useMemo(
     () => therapists.filter(t => t.is_lead_qualified),
     [therapists]
+  )
+  const isUserLead = useMemo(
+    () => shifts.some(s => s.lead_user_id === currentUserId),
+    [shifts, currentUserId]
   )
 
   const workingShiftsByUser = useMemo(() => {
@@ -359,6 +366,9 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
         onLeadUpdate={handleLeadUpdate}
         workingShiftsByUser={workingShiftsByUser}
         allTherapists={therapists}
+        operationalEntries={operationalEntriesByShiftId.get(panelShift?.id ?? '') ?? []}
+        blockStart={blockStart}
+        isUserLead={isUserLead}
       />
 
       {showBulkModal && (

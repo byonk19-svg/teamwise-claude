@@ -147,6 +147,29 @@ export type Database = {
           Database['public']['Tables']['swap_requests']['Insert']
         >
       }
+      operational_entries: {
+        Row: {
+          id: string
+          schedule_block_id: string
+          shift_id: string
+          user_id: string
+          entry_date: string
+          entry_type: 'OC' | 'CI' | 'CX' | 'LE'
+          note: string | null
+          is_backfill: boolean
+          entered_by: string
+          entered_at: string
+          removed_at: string | null
+          removed_by: string | null
+        }
+        Insert: Omit<
+          Database['public']['Tables']['operational_entries']['Row'],
+          'id' | 'entered_at'
+        >
+        Update: Partial<
+          Database['public']['Tables']['operational_entries']['Insert']
+        >
+      }
     }
     Views: {
       shift_planned_headcount: {
@@ -158,6 +181,18 @@ export type Database = {
           total_count: number
         }
       }
+      shift_actual_headcount: {
+        Row: {
+          schedule_block_id: string
+          shift_date: string
+          ft_planned: number
+          prn_planned: number
+          total_planned: number
+          ft_actual: number
+          prn_actual: number
+          total_actual: number
+        }
+      }
     }
     Functions: {
       assign_lead: {
@@ -166,6 +201,23 @@ export type Database = {
           p_shift_date: string
           p_lead_user_id: string | null
         }
+        Returns: { success?: boolean; error?: string }
+      }
+      enter_operational_code: {
+        Args: {
+          p_schedule_block_id: string
+          p_shift_id: string
+          p_entry_type: 'OC' | 'CI' | 'CX' | 'LE'
+          p_note?: string | null
+        }
+        Returns: { success?: boolean; error?: string }
+      }
+      remove_operational_code: {
+        Args: { p_entry_id: string }
+        Returns: { success?: boolean; error?: string }
+      }
+      revert_to_final: {
+        Args: { p_schedule_block_id: string }
         Returns: { success?: boolean; error?: string }
       }
       copy_block: {

@@ -34,8 +34,8 @@ export function Sidebar({ role }: Props) {
 
   return (
     <aside className="
-      fixed top-0 left-0 h-full z-20 bg-white border-r border-slate-200
-      w-56 xl:w-56 lg:w-14 flex flex-col
+      hidden lg:flex fixed top-0 left-0 h-full z-20 bg-white border-r border-slate-200
+      w-56 xl:w-56 lg:w-14 flex-col
     ">
       {/* Logo */}
       <div className="h-14 flex items-center px-4 border-b border-slate-200 shrink-0">

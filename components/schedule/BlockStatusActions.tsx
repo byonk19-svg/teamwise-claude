@@ -3,7 +3,8 @@
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { postPreliminary, postFinal } from '@/app/actions/schedule'
-import { canPostPreliminary, canPublishFinal } from '@/lib/schedule/block-status'
+import { revertToFinal } from '@/app/actions/operational-entries'
+import { canPostPreliminary, canPublishFinal, canRevertToFinal } from '@/lib/schedule/block-status'
 import type { Database } from '@/lib/types/database.types'
 
 type BlockRow = Database['public']['Tables']['schedule_blocks']['Row']
@@ -34,6 +35,8 @@ export function BlockStatusActions({ block, userRole, leadGapDates }: Props) {
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [confirmingPublish, setConfirmingPublish] = useState(false)
+  const [confirmingRevert, setConfirmingRevert] = useState(false)
+  const [revertError, setRevertError] = useState<string | null>(null)
 
   function handlePostPreliminary() {
     setError(null)
@@ -120,10 +123,55 @@ export function BlockStatusActions({ block, userRole, leadGapDates }: Props) {
               )}
             </>
           )}
+
+          {canRevertToFinal(block.status) && (
+            <div className="flex items-center gap-2">
+              {confirmingRevert ? (
+                <>
+                  <span className="text-xs text-slate-600">Revert to Final?</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRevertError(null)
+                      startTransition(async () => {
+                        const result = await revertToFinal(block.id)
+                        if (result.error) {
+                          setRevertError(result.error)
+                          setConfirmingRevert(false)
+                        } else {
+                          setConfirmingRevert(false)
+                        }
+                      })
+                    }}
+                    disabled={isPending}
+                    className="px-2.5 py-1 text-xs bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    Yes, revert
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingRevert(false)}
+                    className="px-2.5 py-1 text-xs border border-slate-200 rounded-md hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmingRevert(true)}
+                  className="px-2.5 py-1 text-xs border border-slate-300 text-slate-600 rounded-md hover:bg-slate-50"
+                >
+                  Revert to Final
+                </button>
+              )}
+            </div>
+          )}
         </>
       )}
 
       {error && <p className="text-xs text-red-600">{error}</p>}
+      {revertError && <p className="text-xs text-red-600">{revertError}</p>}
     </div>
   )
 }
