@@ -85,6 +85,18 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
     [therapists]
   )
 
+  const workingShiftsByUser = useMemo(() => {
+    const m = new Map<string, Array<{ shiftId: string; date: string }>>()
+    for (const s of shifts) {
+      if (s.cell_state === 'working') {
+        const arr = m.get(s.user_id) ?? []
+        arr.push({ shiftId: s.id, date: s.shift_date })
+        m.set(s.user_id, arr)
+      }
+    }
+    return m
+  }, [shifts])
+
   // Current lead user_id per date
   const currentLeadByDate = useMemo(() => {
     const m = new Map<string, string>()
@@ -345,6 +357,8 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
         leadCandidates={panelLeadCandidates}
         currentLeadUserId={panelCurrentLeadUserId}
         onLeadUpdate={handleLeadUpdate}
+        workingShiftsByUser={workingShiftsByUser}
+        allTherapists={therapists}
       />
 
       {showBulkModal && (
