@@ -63,7 +63,6 @@ export function CellPanel({ open, onClose, shift, date, user, userRole, onCellSt
   if (!user || !date) return null
 
   const state = shift?.cell_state ?? 'off'
-  const isLead = !!shift?.lead_user_id
 
   const formattedDate = format(new Date(date + 'T00:00:00'), 'EEEE, MMMM d, yyyy')
 

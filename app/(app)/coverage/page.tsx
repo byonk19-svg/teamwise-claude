@@ -87,7 +87,7 @@ export default async function CoveragePage({
   // Build lead-gap set (dates with working shifts but no lead)
   const leadDates = new Set(shifts.filter(s => s.lead_user_id !== null).map(s => s.shift_date))
   const workingDates = new Set(shifts.filter(s => s.cell_state === 'working').map(s => s.shift_date))
-  const leadGapDates = new Set([...workingDates].filter(d => !leadDates.has(d)))
+  const leadGapDates = new Set(Array.from(workingDates).filter(d => !leadDates.has(d)))
 
   return (
     <div className="space-y-4">
