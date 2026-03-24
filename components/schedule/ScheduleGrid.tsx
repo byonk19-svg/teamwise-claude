@@ -39,6 +39,8 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
   const [panelDate, setPanelDate] = useState<string | null>(null)
   const [panelUser, setPanelUser] = useState<UserRow | undefined>()
   const [panelOpen, setPanelOpen] = useState(false)
+  const [panelLeadCandidates, setPanelLeadCandidates] = useState<UserRow[]>([])
+  const [panelCurrentLeadUserId, setPanelCurrentLeadUserId] = useState<string | null>(null)
 
   const dates = useMemo(() => buildDates(block.start_date), [block.start_date])
   const weeks = useMemo(() => buildWeeks(dates), [dates])
@@ -60,6 +62,24 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
     return index
   }, [shifts])
 
+  // Dates where at least one shift has lead_user_id set
+  const leadDates = useMemo(() => {
+    const s = new Set<string>()
+    for (const sh of shifts) {
+      if (sh.lead_user_id !== null) s.add(sh.shift_date)
+    }
+    return s
+  }, [shifts])
+
+  // Current lead user_id per date
+  const currentLeadByDate = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const sh of shifts) {
+      if (sh.lead_user_id !== null) m.set(sh.shift_date, sh.lead_user_id)
+    }
+    return m
+  }, [shifts])
+
   function getShift(userId: string, date: string): Shift | undefined {
     return shiftIndex.get(`${userId}:${date}`)
   }
@@ -74,12 +94,28 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
     }
   }, [])
 
+  const handleLeadUpdate = useCallback((date: string, newLeadUserId: string | null) => {
+    setShifts(prev => prev.map(s => {
+      if (s.shift_date !== date) return s
+      if (newLeadUserId === null) return { ...s, lead_user_id: null }
+      return { ...s, lead_user_id: s.user_id === newLeadUserId ? newLeadUserId : null }
+    }))
+    setPanelCurrentLeadUserId(newLeadUserId)
+  }, [])
+
   function handleCellClick(shift: Shift | undefined, date: string, user: UserRow) {
     const currentShift = shift ? shifts.find(s => s.id === shift.id) ?? shift : undefined
     setPanelShift(currentShift)
     setPanelDate(date)
     setPanelUser(user)
     setPanelOpen(true)
+    // Compute lead candidates: lead-qualified AND working on this date
+    const candidates = therapists.filter(t =>
+      t.is_lead_qualified &&
+      shiftIndex.get(`${t.id}:${date}`)?.cell_state === 'working'
+    )
+    setPanelLeadCandidates(candidates)
+    setPanelCurrentLeadUserId(currentLeadByDate.get(date) ?? null)
   }
 
   const headcounts = useMemo(() => {
@@ -193,6 +229,7 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
                   date={date}
                   onClick={(shift, d) => handleCellClick(shift, d, therapist)}
                   isConflicted={conflictedCells?.has(`${therapist.id}:${date}`) ?? false}
+                  dateHasLead={leadDates.has(date)}
                 />
               ))}
             </div>
@@ -232,6 +269,7 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
                   date={date}
                   onClick={(shift, d) => handleCellClick(shift, d, therapist)}
                   isConflicted={conflictedCells?.has(`${therapist.id}:${date}`) ?? false}
+                  dateHasLead={leadDates.has(date)}
                 />
               ))}
             </div>
@@ -281,6 +319,9 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
         blockStatus={blockStatus}
         blockId={blockId}
         currentUserId={currentUserId}
+        leadCandidates={panelLeadCandidates}
+        currentLeadUserId={panelCurrentLeadUserId}
+        onLeadUpdate={handleLeadUpdate}
       />
     </div>
   )

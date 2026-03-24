@@ -5,6 +5,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
 import { updateCellState } from '@/app/actions/schedule'
+import { assignLead } from '@/app/actions/lead-assignment'
 import type { Database } from '@/lib/types/database.types'
 import { canEditCell } from '@/lib/schedule/block-status'
 import { isChangeRequestAllowed } from '@/lib/schedule/change-requests'
@@ -35,9 +36,12 @@ interface Props {
   blockStatus: Database['public']['Tables']['schedule_blocks']['Row']['status']
   blockId: string
   currentUserId: string
+  leadCandidates: UserRow[]
+  currentLeadUserId: string | null
+  onLeadUpdate: (date: string, newLeadUserId: string | null) => void
 }
 
-export function CellPanel({ open, onClose, shift, date, user, userRole, onCellStateUpdate, blockStatus, blockId, currentUserId }: Props) {
+export function CellPanel({ open, onClose, shift, date, user, userRole, onCellStateUpdate, blockStatus, blockId, currentUserId, leadCandidates, currentLeadUserId, onLeadUpdate }: Props) {
   const [isPending, startTransition] = useTransition()
   const [editError, setEditError] = useState<string | null>(null)
   const [showChangeReqForm, setShowChangeReqForm] = useState(false)
@@ -120,16 +124,39 @@ export function CellPanel({ open, onClose, shift, date, user, userRole, onCellSt
             {editError && <p className="mt-1 text-xs text-red-600">{editError}</p>}
           </div>
 
-          {/* Lead assignment */}
+          {/* Lead / Charge — interactive for managers on editable blocks */}
           {state === 'working' && (
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-slate-700">Lead / Charge</span>
-              {isLead ? (
-                <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">
-                  Assigned ✓
-                </Badge>
+            <div>
+              <span className="block text-sm font-medium text-slate-700 mb-2">Lead / Charge</span>
+              {userRole === 'manager' && canEditCell(blockStatus, userRole) ? (
+                <select
+                  value={currentLeadUserId ?? ''}
+                  disabled={isPending}
+                  onChange={e => {
+                    const newId = e.target.value || null
+                    onLeadUpdate(date, newId)
+                    startTransition(async () => {
+                      const result = await assignLead(blockId, date, newId)
+                      if (result.error) {
+                        // revert optimistic update
+                        onLeadUpdate(date, currentLeadUserId)
+                        setEditError(result.error)
+                      }
+                    })
+                  }}
+                  className="w-full text-sm border border-slate-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:opacity-50"
+                >
+                  <option value="">— None —</option>
+                  {leadCandidates.map(c => (
+                    <option key={c.id} value={c.id}>{c.full_name}</option>
+                  ))}
+                </select>
               ) : (
-                <span className="text-sm text-slate-400">Not assigned</span>
+                currentLeadUserId ? (
+                  <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">Assigned ✓</Badge>
+                ) : (
+                  <span className="text-sm text-slate-400">Not assigned</span>
+                )
               )}
             </div>
           )}
