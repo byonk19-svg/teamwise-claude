@@ -13,9 +13,9 @@ type HeadcountRow = Database['public']['Views']['shift_planned_headcount']['Row'
 export default async function CoveragePage({
   searchParams,
 }: {
-  searchParams: Promise<{ blockId?: string; shift?: string }>
+  searchParams: { blockId?: string; shift?: string }
 }) {
-  const { blockId, shift } = await searchParams
+  const { blockId, shift } = searchParams
   const user = await getServerUser()
   if (!user) redirect('/login')
 
