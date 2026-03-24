@@ -122,6 +122,31 @@ export type Database = {
           Database['public']['Tables']['prn_shift_interest']['Insert']
         >
       }
+      swap_requests: {
+        Row: {
+          id: string
+          schedule_block_id: string
+          requester_id: string
+          requester_shift_id: string
+          partner_id: string
+          partner_shift_id: string
+          is_cross_shift: boolean
+          status: 'pending' | 'approved' | 'rejected' | 'expired'
+          expires_at: string
+          request_note: string | null
+          response_note: string | null
+          created_at: string
+          actioned_at: string | null
+          actioned_by: string | null
+        }
+        Insert: Omit<
+          Database['public']['Tables']['swap_requests']['Row'],
+          'id' | 'created_at'
+        >
+        Update: Partial<
+          Database['public']['Tables']['swap_requests']['Insert']
+        >
+      }
     }
     Views: {
       shift_planned_headcount: {
@@ -135,6 +160,14 @@ export type Database = {
       }
     }
     Functions: {
+      assign_lead: {
+        Args: {
+          p_schedule_block_id: string
+          p_shift_date: string
+          p_lead_user_id: string | null
+        }
+        Returns: { success?: boolean; error?: string }
+      }
       copy_block: {
         Args: { source_block_id: string; new_block_id: string }
         Returns: void
