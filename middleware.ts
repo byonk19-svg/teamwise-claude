@@ -42,7 +42,7 @@ export async function middleware(request: NextRequest) {
 
   if (user && isAuthRoute) {
     const url = request.nextUrl.clone()
-    url.pathname = '/schedule'
+    url.pathname = '/'
     const redirectResponse = NextResponse.redirect(url)
     supabaseResponse.cookies.getAll().forEach(cookie =>
       redirectResponse.cookies.set(cookie.name, cookie.value)

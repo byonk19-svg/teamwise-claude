@@ -13,7 +13,7 @@ Teamwise is a Respiratory Therapy department scheduling app. Managers build 6-we
 ```bash
 npm run dev          # Start dev server (port 3000)
 npm run build        # Production build
-npm test             # Vitest unit tests (90 tests as of Phase 6 complete)
+npm test             # Vitest unit tests (101 tests as of Phase 7)
 npm run test:e2e     # Playwright E2E (requires real .env.local; see Testing)
 npm run test:e2e:ui  # Playwright UI mode
 npm run seed         # Seed Supabase with test data (no-op if already seeded; see Seed Data)
@@ -53,6 +53,7 @@ Day/Night shift color is controlled via a CSS custom property `--shift-color` se
 - Phase 4 client components: `BulkLeadModal`, `SwapInbox`, `CoverageHeatmap`
 - Phase 5 client components: `OperationalCodeEntry`, `WeekView`, `AlertBanner`, `AuditLog`
 - Phase 6 client components: `OpsFilters`, `OpsEventFeed`, `OpsRealtimeRefresh`, `OpsBlockHealthTable`
+- Phase 7: `/today` and `components/today/*` are **Server Components** (presentational only; data fetched in `app/(app)/today/page.tsx`). Shared shift state colors: `lib/schedule/cell-colors.ts` (also used by `WeekView`).
 
 ### Supabase RPC Typing
 Supabase client doesn't auto-type RPCs. Cast as `any` to call: `(supabase as any).rpc('rpc_name', { params })`. Return type must be cast manually.
@@ -130,7 +131,7 @@ SUPABASE_SERVICE_ROLE_KEY       # Secret key from API Keys page
 ## Testing
 
 - **Unit tests:** Vitest — `npm test`. Keep all tests passing before any commit.
-- **E2E tests:** Playwright — requires real `.env.local` credentials and `E2E_AUTH=true` for authenticated specs. Use `loginAsManager` from `tests/e2e/helpers/auth.ts` (waits up to 60s for `/schedule`; throws with login alert text or env hint on failure). `tests/e2e/phase5-operational.spec.ts` runs **serial** within the file so revert/coverage/week tests do not race the same DB. `playwright.config.ts` uses extended timeouts and **one worker** locally so `next dev` is not overloaded; avoid running two servers on port 3000.
+- **E2E tests:** Playwright — requires real `.env.local` credentials and `E2E_AUTH=true` for authenticated specs. Use `loginAsManager` from `tests/e2e/helpers/auth.ts` (waits up to 60s for `/schedule`; throws with login alert text or env hint on failure). After login, middleware sends users to `/`; `app/page.tsx` then redirects **managers → `/schedule`**, **therapists → `/today`**. `loginAsManager` remains correct for manager flows. `tests/e2e/phase5-operational.spec.ts` runs **serial** within the file so revert/coverage/week tests do not race the same DB. `playwright.config.ts` uses extended timeouts and **one worker** locally so `next dev` is not overloaded; avoid running two servers on port 3000.
 - Vitest is configured to exclude `tests/e2e/**` — do not remove this exclusion.
 
 ---
@@ -149,6 +150,10 @@ SUPABASE_SERVICE_ROLE_KEY       # Secret key from API Keys page
 10. **`schedule_blocks` `.update()` returns `never`** — self-referential Database type issue in generated client. Always use `(supabase as any).from('schedule_blocks').update(...)` for block status mutations.
 11. **Set spread downlevel iteration** — `[...mySet]` fails with `TS2802` in this tsconfig. Always use `Array.from(mySet)` instead when spreading Sets or Map iterators.
 12. **E2E `/ops` drill-down** — On desktop, the sidebar includes a link named “Schedule”; table-scoped locators in `tests/e2e/ops.spec.ts` avoid clicking the nav link (which omits `?blockId=`).
+13. **PRN empty-state pattern** — PRN-only UI sections (e.g. Open Shifts card) must always render for PRN users even when the backing data (preliminary block) is absent. Pass `null` props and show “No open shifts right now” — never conditionally omit the card based on a nullable dependency.
+14. **Today hub / operational display** — `operational_entries` rows use **`entry_type`** (not `code`) for OC/CI/CX/LE; Today and audit UIs read that column.
+15. **`prn_shift_interest` has no `block_id`** — Interest is keyed by `shift_id` only; Today hub counts unsignaled PRN slots by intersecting off-shift ids with interest rows (same pattern as `availability/open-shifts/page.tsx`).
+16. **`swap_requests` has no `shift_date`** — Join through `requester_shift_id` / `partner_shift_id` → `shifts.shift_date` when displaying dates.
 
 ---
 
@@ -157,7 +162,9 @@ SUPABASE_SERVICE_ROLE_KEY       # Secret key from API Keys page
 - **Phase 1 (Foundation):** Complete — schema, auth, app shell, calendar grid, cell panel, PWA foundation
 - **Phase 2 (Availability & Schedule Building):** Complete — availability windows, FT/PRN submission, copy-from-prior-block, constraint diff, cell state editing with optimistic updates
 - **Phase 3 (Preliminary / Final Lifecycle):** Complete — types, block-status helpers, postPreliminary/postFinal actions, BlockStatusActions, BlockPicker groupings, CellPanel prop threading, FT change request form, PRN interest actions, manager inbox, PRN open shifts page.
-- **Phase 4 (Lead Assignment & Shift Swaps):** Complete — `swap_requests` table + `assign_lead` RPC (migration 003), lead eligibility/gap helpers + tests, swap-allowed helper + tests, `assignLead` server action, GridCell lead-gap dot, ScheduleGrid lead tracking + bulk modal trigger, CellPanel lead dropdown + swap request form, BlockStatusActions lead-gap warning, BulkLeadModal, `submitSwap`/`resolveSwap` actions, `/swaps` page + SwapInbox, `/coverage` page + CoverageHeatmap.
+- **Phase 4 (Lead Assignment & Shift Swaps):** Complete — `swap_requests` table + `assign_lead` RPC (migration 003), lead eligibility/gap helpers + tests, swap-allowed helper + tests, `assignLead` server action, GridCell lead-gap dot, ScheduleGrid lead tracking + bulk modal trigger, CellPanel lead dropdown + swap request form, BlockStatusActions lead-gap warning, BulkLeadModal, `submitSwap`/`resolveSwap` actions, `/swaps` page (managers: `SwapInbox`; therapists: read-only `TherapistSwapQueue`), `/coverage` page + CoverageHeatmap.
 - **Phase 5 (Operational Layer):** Complete — `operational_entries` table/RPCs + RLS, shift actuals view, operational code entry in `CellPanel` + mobile `WeekView`, coverage actuals + alerts, audit log page + CSV export, revert-to-final flow, and hardening/observability updates.
 - **Phase 6 (Operational Dashboard):** Complete — manager-only `/ops` read-only dashboard: KPI cards (aggregated + drill-downs), filters (shift type, block, date range), **Block health** table (per-block risk metrics, Schedule/Focus links), consolidated event feed with drill-downs, Supabase Realtime refresh (operational entries, swaps, change requests, shifts, PRN interest batched by `shift_id`). Playwright smoke in `tests/e2e/ops.spec.ts` when `E2E_AUTH=true`.
-- **Phase 7+:** Not defined in-repo — candidates: therapist “today” hub, notifications, richer exports, `/staff` & `/settings` depth, CI-hardened E2E with isolated DB.
+- **Phase 7 (Therapist Today Hub):** Complete — `/today` therapist landing (shift card, week strip, swaps, op codes, block context, PRN open-shift count). `app/(app)/today/page.tsx` parallel fetches; `lib/today/helpers.ts` (`buildWeekWindow`, `resolveLeadName`, `computeUnsignaledCount`) + `tests/unit/today-helpers.test.ts` (11 tests). `lib/schedule/cell-colors.ts` + `components/today/*`. Post-login: middleware → `/`, then `app/page.tsx` branches by role (therapist → `/today`, manager → `/schedule`). Sidebar “Today” for therapists. Plan reference: `docs/superpowers/plans/2026-03-24-phase7-today-hub.md`.
+- **Phase 8 (Notifications):** In progress — persistent in-app + push + email notification system. `notifications` table + `push_subscriptions` table (migration `006_phase8_notifications.sql`). Server-action-inline pattern: each triggering action writes notification rows + dispatches push via `after()`. 5 event types: `swap_requested`, `swap_resolved`, `change_request_resolved`, `prn_interest_resolved`, `block_posted`. Email (Resend, `schedule@teamwise.work`) for `block_posted` only. TopBar bell with unread badge + `NotificationPanel` client component. Push via `web-push` (VAPID). Plan reference: `docs/superpowers/plans/2026-03-24-phase8-notifications.md`.
+- **Phase 9+:** Candidates — richer exports, `/staff` & `/settings` depth, CI-hardened E2E with isolated DB.

@@ -3,19 +3,13 @@ import { useMemo, useState } from 'react'
 import { addDays, format, startOfWeek } from 'date-fns'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { OperationalCodeEntry } from './OperationalCodeEntry'
+import { STATE_COLORS } from '@/lib/schedule/cell-colors'
 import type { Database } from '@/lib/types/database.types'
 
 type ShiftRow = Database['public']['Tables']['shifts']['Row']
 type UserRow = Database['public']['Tables']['users']['Row']
 type OperationalEntry = Database['public']['Tables']['operational_entries']['Row']
 type BlockRow = Database['public']['Tables']['schedule_blocks']['Row']
-
-const STATE_COLORS: Record<string, string> = {
-  working: 'bg-green-500',
-  cannot_work: 'bg-red-400',
-  off: 'bg-slate-300',
-  fmla: 'bg-purple-400',
-}
 
 interface Props {
   block: BlockRow

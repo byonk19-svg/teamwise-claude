@@ -14,6 +14,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  { href: '/today',           label: 'Today',            roles: ['therapist'] },
   { href: '/schedule',        label: 'Schedule',         roles: ['manager', 'therapist'] },
   { href: '/availability',    label: 'Availability',     roles: ['manager', 'therapist'] },
   { href: '/swaps',           label: 'Swaps',            roles: ['manager', 'therapist'] },
