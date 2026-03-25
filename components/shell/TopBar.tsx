@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { signOut } from '@/lib/auth'
+import { NotificationBell } from './NotificationBell'
 import type { Database } from '@/lib/types/database.types'
 
 type UserRow = Database['public']['Tables']['users']['Row']
@@ -26,8 +27,7 @@ export function TopBar({ user }: Props) {
       <Badge variant={user.role === 'manager' ? 'default' : 'secondary'}>
         {user.role === 'manager' ? 'Manager' : 'Therapist'}
       </Badge>
-      {/* Notification dot — wired in Phase 3 */}
-      <div className="w-2 h-2 rounded-full bg-transparent" aria-hidden />
+      <NotificationBell />
       <button
         onClick={handleSignOut}
         className="text-sm text-slate-500 hover:text-slate-700 ml-2"

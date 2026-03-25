@@ -1,8 +1,12 @@
 // app/actions/swap-requests.ts
 'use server'
+import { runAfterResponse } from '@/lib/server/deferred-work'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getServerUser } from '@/lib/auth'
+import { createNotification } from '@/lib/notifications/create'
+import { sendPush } from '@/lib/notifications/push'
+import { swapRequestedPayload, swapResolvedPayload } from '@/lib/notifications/payloads'
 import { isSwapAllowed, swapExpiryDate } from '@/lib/schedule/swap-requests'
 import { logActionFailure, logActionStart, logActionSuccess } from '@/lib/observability/action-log'
 
@@ -87,6 +91,13 @@ export async function submitSwap(
     return { error: 'Cannot swap with yourself' }
   }
 
+  const { data: requesterProfile } = await supabase
+    .from('users')
+    .select('full_name')
+    .eq('id', user.id)
+    .single() as { data: { full_name: string | null } | null; error: unknown }
+  const requesterName = requesterProfile?.full_name ?? 'A colleague'
+
   const isCrossShift = reqShift.is_cross_shift || partnerShift.is_cross_shift
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -108,6 +119,16 @@ export async function submitSwap(
     logActionFailure('submitSwap', user.id, error.message, { blockId, requesterShiftId, partnerShiftId })
     return { error: error.message }
   }
+
+  const swapPayload = swapRequestedPayload(requesterName, reqShift.shift_date)
+  await createNotification(
+    partnerShift.user_id,
+    'swap_requested',
+    swapPayload.title,
+    swapPayload.body,
+    swapPayload.href
+  )
+  runAfterResponse(() => sendPush(partnerShift.user_id, swapPayload))
 
   revalidatePath('/swaps')
   revalidatePath('/schedule')
@@ -135,9 +156,9 @@ export async function resolveSwap(
 
   const { data: profile } = await supabase
     .from('users')
-    .select('role')
+    .select('role, full_name')
     .eq('id', user.id)
-    .single() as { data: { role: string } | null; error: unknown }
+    .single() as { data: { role: string; full_name: string | null } | null; error: unknown }
   if (!profile || profile.role !== 'manager') {
     logActionFailure('resolveSwap', user.id, 'Manager access required', { swapId })
     return { error: 'Manager access required' }
@@ -177,6 +198,13 @@ export async function resolveSwap(
     logActionFailure('resolveSwap', user.id, 'Block status guard rejected', { swapId, status: block.status })
     return { error: 'Cannot resolve swap for current block status' }
   }
+
+  const { data: reqShiftForNotif } = await supabase
+    .from('shifts')
+    .select('shift_date')
+    .eq('id', swap.requester_shift_id)
+    .single() as { data: { shift_date: string } | null; error: unknown }
+  const notifShiftDate = reqShiftForNotif?.shift_date ?? 'your shift'
 
   // Update swap status
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -259,6 +287,16 @@ export async function resolveSwap(
         .eq('shift_date', reqGivesDate)
     }
   }
+
+  const resolvedPayload = swapResolvedPayload(decision, profile.full_name ?? 'Manager', notifShiftDate)
+  await createNotification(
+    swap.requester_id,
+    'swap_resolved',
+    resolvedPayload.title,
+    resolvedPayload.body,
+    resolvedPayload.href
+  )
+  runAfterResponse(() => sendPush(swap.requester_id, resolvedPayload))
 
   revalidatePath('/swaps')
   revalidatePath('/schedule')

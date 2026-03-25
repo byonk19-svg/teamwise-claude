@@ -170,6 +170,50 @@ export type Database = {
           Database['public']['Tables']['operational_entries']['Insert']
         >
       }
+      notifications: {
+        Row: {
+          id: string
+          user_id: string
+          type: string
+          title: string
+          body: string
+          href: string | null
+          read_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          type: string
+          title: string
+          body: string
+          href?: string | null
+          read_at?: string | null
+          created_at?: string
+        }
+        Update: Partial<{
+          read_at: string | null
+        }>
+      }
+      push_subscriptions: {
+        Row: {
+          id: string
+          user_id: string
+          endpoint: string
+          p256dh: string
+          auth: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          endpoint: string
+          p256dh: string
+          auth: string
+          created_at?: string
+        }
+        Update: never
+      }
     }
     Views: {
       shift_planned_headcount: {

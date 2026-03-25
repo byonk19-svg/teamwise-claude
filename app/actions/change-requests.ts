@@ -1,8 +1,12 @@
 // app/actions/change-requests.ts
 'use server'
+import { runAfterResponse } from '@/lib/server/deferred-work'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getServerUser } from '@/lib/auth'
+import { createNotification } from '@/lib/notifications/create'
+import { sendPush } from '@/lib/notifications/push'
+import { changeRequestResolvedPayload } from '@/lib/notifications/payloads'
 import { isChangeRequestAllowed } from '@/lib/schedule/change-requests'
 import { logActionFailure, logActionStart, logActionSuccess } from '@/lib/observability/action-log'
 import type { Database } from '@/lib/types/database.types'
@@ -122,10 +126,16 @@ export async function resolveChangeRequest(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: req } = await (supabase as any)
     .from('preliminary_change_requests')
-    .select('shift_id, request_type, status, schedule_block_id')
+    .select('shift_id, request_type, status, schedule_block_id, requester_id')
     .eq('id', requestId)
     .single() as {
-      data: { shift_id: string; request_type: string; status: string; schedule_block_id: string } | null
+      data: {
+        shift_id: string
+        request_type: string
+        status: string
+        schedule_block_id: string
+        requester_id: string
+      } | null
       error: unknown
     }
   if (!req) {
@@ -151,6 +161,12 @@ export async function resolveChangeRequest(
     return { error: 'Cannot resolve requests unless block is still Preliminary' }
   }
 
+  const { data: shiftForNotif } = await supabase
+    .from('shifts')
+    .select('shift_date')
+    .eq('id', req.shift_id)
+    .single() as { data: { shift_date: string } | null; error: unknown }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error: updateErr } = await (supabase as any)
     .from('preliminary_change_requests')
@@ -175,6 +191,19 @@ export async function resolveChangeRequest(
       .update({ cell_state: 'off' })
       .eq('id', req.shift_id)
   }
+
+  const crPayload = changeRequestResolvedPayload(
+    decision === 'accepted' ? 'approved' : 'rejected',
+    shiftForNotif?.shift_date ?? 'your shift'
+  )
+  await createNotification(
+    req.requester_id,
+    'change_request_resolved',
+    crPayload.title,
+    crPayload.body,
+    crPayload.href
+  )
+  runAfterResponse(() => sendPush(req.requester_id, crPayload))
 
   revalidatePath('/schedule')
   revalidatePath('/schedule/inbox')

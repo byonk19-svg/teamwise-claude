@@ -9,6 +9,7 @@ import { TodaySwapsCard, type TodaySwapSummary } from '@/components/today/TodayS
 import { TodayOpCodesCard } from '@/components/today/TodayOpCodesCard'
 import { TodayBlockCard } from '@/components/today/TodayBlockCard'
 import { TodayOpenShiftsCard } from '@/components/today/TodayOpenShiftsCard'
+import { PushPermissionToggle } from '@/components/notifications/PushPermissionToggle'
 import { buildWeekWindow, resolveLeadName, computeUnsignaledCount } from '@/lib/today/helpers'
 import type { Database } from '@/lib/types/database.types'
 
@@ -111,11 +112,14 @@ export default async function TodayPage() {
 
   if (!block) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-12">
+      <div className="max-w-2xl mx-auto px-4 py-12 space-y-4">
         <div className="rounded-lg border border-slate-200 bg-white p-8 text-center shadow-sm">
           <p className="text-sm text-slate-500">
             No active schedule. Check back when your manager posts the next block.
           </p>
+        </div>
+        <div className="pt-2">
+          <PushPermissionToggle />
         </div>
       </div>
     )
@@ -209,6 +213,10 @@ export default async function TodayPage() {
             prelimBlockId={prelimBlock?.id ?? null}
           />
         )}
+      </div>
+
+      <div className="pt-2">
+        <PushPermissionToggle />
       </div>
     </div>
   )

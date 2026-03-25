@@ -1,8 +1,12 @@
 // app/actions/prn-interest.ts
 'use server'
+import { runAfterResponse } from '@/lib/server/deferred-work'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getServerUser } from '@/lib/auth'
+import { createNotification } from '@/lib/notifications/create'
+import { sendPush } from '@/lib/notifications/push'
+import { prnInterestResolvedPayload } from '@/lib/notifications/payloads'
 import { isPrnInterestAllowed } from '@/lib/schedule/change-requests'
 import { logActionFailure, logActionStart, logActionSuccess } from '@/lib/observability/action-log'
 
@@ -99,9 +103,9 @@ export async function resolvePrnInterest(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: interest } = await (supabase as any)
     .from('prn_shift_interest')
-    .select('shift_id, status')
+    .select('shift_id, status, user_id')
     .eq('id', interestId)
-    .single() as { data: { shift_id: string; status: string } | null; error: unknown }
+    .single() as { data: { shift_id: string; status: string; user_id: string } | null; error: unknown }
   if (!interest) {
     logActionFailure('resolvePrnInterest', user.id, 'Interest record not found', { interestId })
     return { error: 'Interest record not found' }
@@ -113,9 +117,9 @@ export async function resolvePrnInterest(
 
   const { data: shift } = await supabase
     .from('shifts')
-    .select('schedule_block_id')
+    .select('schedule_block_id, shift_date')
     .eq('id', interest.shift_id)
-    .single() as { data: { schedule_block_id: string } | null; error: unknown }
+    .single() as { data: { schedule_block_id: string; shift_date: string } | null; error: unknown }
   if (!shift) {
     logActionFailure('resolvePrnInterest', user.id, 'Shift not found', { interestId })
     return { error: 'Shift not found' }
@@ -153,6 +157,16 @@ export async function resolvePrnInterest(
       .update({ cell_state: 'working' })
       .eq('id', interest.shift_id)
   }
+
+  const prnPayload = prnInterestResolvedPayload(decision, shift.shift_date)
+  await createNotification(
+    interest.user_id,
+    'prn_interest_resolved',
+    prnPayload.title,
+    prnPayload.body,
+    prnPayload.href
+  )
+  runAfterResponse(() => sendPush(interest.user_id, prnPayload))
 
   revalidatePath('/schedule')
   revalidatePath('/schedule/inbox')

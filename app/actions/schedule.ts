@@ -1,9 +1,14 @@
 // app/actions/schedule.ts
 'use server'
+import { runAfterResponse } from '@/lib/server/deferred-work'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getServerUser } from '@/lib/auth'
+import { createNotificationForMany } from '@/lib/notifications/create'
+import { sendPushToMany } from '@/lib/notifications/push'
+import { sendBlockPostedEmail } from '@/lib/notifications/email'
+import { blockPostedPayload } from '@/lib/notifications/payloads'
 import { addDays, format } from 'date-fns'
 import { canEditCell, canPostPreliminary, canPublishFinal } from '@/lib/schedule/block-status'
 
@@ -184,9 +189,18 @@ export async function postPreliminary(blockId: string): Promise<{ error?: string
 
   const { data: block } = await supabase
     .from('schedule_blocks')
-    .select('status')
+    .select('status, department_id, shift_type, start_date, end_date')
     .eq('id', blockId)
-    .single() as { data: { status: string } | null; error: unknown }
+    .single() as {
+      data: {
+        status: string
+        department_id: string
+        shift_type: string
+        start_date: string
+        end_date: string
+      } | null
+      error: unknown
+    }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (!block || !canPostPreliminary(block.status as any)) {
     return { error: 'Block must be in preliminary_draft status' }
@@ -199,6 +213,36 @@ export async function postPreliminary(blockId: string): Promise<{ error?: string
     .eq('id', blockId)
 
   if (error) return { error: error.message }
+
+  const { data: deptUsers } = await supabase
+    .from('users')
+    .select('id, email, full_name')
+    .eq('department_id', block.department_id) as {
+      data: Array<{ id: string; email: string; full_name: string | null }> | null
+    }
+  const userIds = Array.from(new Set((deptUsers ?? []).map(u => u.id)))
+  const postedPayload = blockPostedPayload(
+    block.shift_type as 'day' | 'night',
+    block.start_date,
+    block.end_date,
+    'preliminary'
+  )
+  await createNotificationForMany(
+    userIds,
+    'block_posted',
+    postedPayload.title,
+    postedPayload.body,
+    postedPayload.href
+  )
+  runAfterResponse(async () => {
+    await sendPushToMany(userIds, postedPayload)
+    await sendBlockPostedEmail(deptUsers ?? [], {
+      shift_type: block.shift_type as 'day' | 'night',
+      start_date: block.start_date,
+      end_date: block.end_date,
+      status: 'preliminary',
+    })
+  })
 
   revalidatePath('/schedule')
   return {}
@@ -220,9 +264,18 @@ export async function postFinal(blockId: string): Promise<{ error?: string }> {
 
   const { data: block } = await supabase
     .from('schedule_blocks')
-    .select('status')
+    .select('status, department_id, shift_type, start_date, end_date')
     .eq('id', blockId)
-    .single() as { data: { status: string } | null; error: unknown }
+    .single() as {
+      data: {
+        status: string
+        department_id: string
+        shift_type: string
+        start_date: string
+        end_date: string
+      } | null
+      error: unknown
+    }
   if (!block || !canPublishFinal(block.status as 'preliminary')) {
     return { error: 'Block must be in Preliminary status to publish as Final' }
   }
@@ -238,6 +291,36 @@ export async function postFinal(blockId: string): Promise<{ error?: string }> {
     .eq('id', blockId)
 
   if (error) return { error: error.message }
+
+  const { data: deptUsers } = await supabase
+    .from('users')
+    .select('id, email, full_name')
+    .eq('department_id', block.department_id) as {
+      data: Array<{ id: string; email: string; full_name: string | null }> | null
+    }
+  const userIds = Array.from(new Set((deptUsers ?? []).map(u => u.id)))
+  const finalPayload = blockPostedPayload(
+    block.shift_type as 'day' | 'night',
+    block.start_date,
+    block.end_date,
+    'final'
+  )
+  await createNotificationForMany(
+    userIds,
+    'block_posted',
+    finalPayload.title,
+    finalPayload.body,
+    finalPayload.href
+  )
+  runAfterResponse(async () => {
+    await sendPushToMany(userIds, finalPayload)
+    await sendBlockPostedEmail(deptUsers ?? [], {
+      shift_type: block.shift_type as 'day' | 'night',
+      start_date: block.start_date,
+      end_date: block.end_date,
+      status: 'final',
+    })
+  })
 
   revalidatePath('/schedule')
   return {}
