@@ -40,17 +40,22 @@ components/
   coverage/         # CoverageHeatmap
   ops/              # Ops dashboard components
   audit/            # AuditLog
+  notifications/    # PushPermissionToggle
+  staff/            # StaffTable, StaffSheet, InviteDialog (manager-only)
+  settings/         # CoverageThresholdsForm (manager-only)
   ui/               # shadcn/ui primitives
 
 lib/
-  auth.ts           # ONLY file that calls supabase.auth.*
+  auth.ts           # ONLY file that calls supabase.auth.* (exceptions: see Auth Abstraction)
   supabase/
     server.ts       # Cookie-based anon client (server components + actions)
-    service-role.ts # Service-role client (notifications only — bypasses RLS)
+    service-role.ts # Service-role client (notifications + staff actions — bypasses RLS)
   schedule/         # block-status helpers, cell-colors, optimistic updates, swap logic
   today/            # buildWeekWindow, resolveLeadName, computeUnsignaledCount
   notifications/    # create, push, email, payloads
+  settings/         # validateCoverageThresholds pure helper
   ops/              # KPI helpers
+  server/           # deferred-work.ts (runAfterResponse shim)
   types/
     database.types.ts  # Generated + manual table type stubs
 
@@ -85,9 +90,10 @@ The `await searchParams` pattern is Next.js 15/16 only and will cause runtime er
 ### Auth Abstraction (CRITICAL)
 `lib/auth.ts` is the **only** file that calls Supabase Auth APIs. No other file may import or call `supabase.auth.*` directly.
 
-**Documented exceptions** (both have inline comments explaining why):
+**Documented exceptions** (all have inline comments explaining why):
 - `middleware.ts` — must call Supabase directly; runs before `next/headers` is available
 - `supabase/seed.ts` — dev-only script; uses service-role client to create test users
+- `app/actions/staff.ts` — calls `supabase.auth.admin.inviteUserByEmail` and `auth.admin.deleteUser` via service-role client (invite flow requires admin API; no user session exists at invite time)
 
 ### Manual Table Access Pattern
 Any table added to `lib/types/database.types.ts` manually (not in the generated Supabase client) must be accessed via `(supabase as any).from('table_name')`. Currently applies to:
@@ -99,6 +105,7 @@ Any table added to `lib/types/database.types.ts` manually (not in the generated 
 | `swap_requests` | Phase 4 |
 | `notifications` | Phase 8 |
 | `push_subscriptions` | Phase 8 |
+| `coverage_thresholds` | Phase 9 |
 
 ### Supabase RPC Typing
 Supabase client doesn't auto-type RPCs. Cast as `any` to call: `(supabase as any).rpc('rpc_name', { params })`. Return type must be cast manually.
@@ -111,8 +118,8 @@ Supabase client doesn't auto-type RPCs. Cast as `any` to call: `(supabase as any
 ### Server Client Workaround
 `lib/supabase/server.ts` uses `require('next/headers')` inside the function body (not a top-level import). This is intentional — Next.js 14 causes client bundle conflicts when `next/headers` is imported at the top level. Do not "fix" this.
 
-### Service-Role Client (Phase 8)
-`lib/supabase/service-role.ts` exports `createServiceRoleClient()` — uses `SUPABASE_SERVICE_ROLE_KEY` to bypass RLS. **Only import in server-side files** (`lib/notifications/*`, server actions). Never import in client components, middleware, or `lib/supabase/server.ts`. Needed for notification inserts (writing rows for other users' `user_id` values, which RLS would reject with the anon client).
+### Service-Role Client (Phase 8+)
+`lib/supabase/service-role.ts` exports `createServiceRoleClient()` — uses `SUPABASE_SERVICE_ROLE_KEY` to bypass RLS. **Only import in server-side files** (`lib/notifications/*`, `app/actions/staff.ts`). Never import in client components, middleware, or `lib/supabase/server.ts`. Needed for: notification inserts (writing rows for other users' `user_id`), `auth.admin.*` APIs (invite/delete user), and deactivation cleanup steps that mutate other users' rows.
 
 ### Background Work with `unstable_after` (Phase 8)
 `unstable_after` from `next/server` runs a callback after the response is sent — used for push and email dispatch so they don't block the server action response. Requires `experimental: { after: true }` in `next.config.js`. Import as:
@@ -189,7 +196,7 @@ RESEND_API_KEY                  # from: Resend dashboard → API Keys
 
 ## Testing
 
-- **Unit tests:** Vitest — `npm test`. Keep all tests passing before any commit. 112 tests as of Phase 7; 121 planned after Phase 8.
+- **Unit tests:** Vitest — `npm test`. Keep all tests passing before any commit. 110 tests as of Phase 8; 114 planned after Phase 9 (4 new: `validateCoverageThresholds`).
 - **E2E tests:** Playwright — requires real `.env.local` credentials and `E2E_AUTH=true` for authenticated specs. Use `loginAsManager` from `tests/e2e/helpers/auth.ts` (waits up to 60s for `/schedule`; throws with login alert text or env hint on failure). After login, middleware sends users to `/`; `app/page.tsx` then redirects **managers → `/schedule`**, **therapists → `/today`**. `loginAsManager` remains correct for manager flows. `tests/e2e/phase5-operational.spec.ts` runs **serial** within the file so revert/coverage/week tests do not race the same DB. `playwright.config.ts` uses extended timeouts and **one worker** locally so `next dev` is not overloaded; avoid running two servers on port 3000.
 - Vitest is configured to exclude `tests/e2e/**` — do not remove this exclusion.
 
@@ -217,6 +224,7 @@ RESEND_API_KEY                  # from: Resend dashboard → API Keys
 18. **Post-response work (Phase 8)** — Push/email after server actions use **`runAfterResponse`** from `lib/server/deferred-work.ts` (queueMicrotask + detached promise). This repo’s Next 14.2.x build does not type-export `unstable_after` from `next/server`; do not add `experimental.after` to `next.config.js` unless upgrading to a Next version that supports it and switching call sites to the stable `after` API.
 19. **Email from domain** — All Resend emails use `schedule@teamwise.work`. The domain must be verified in Resend before emails will deliver.
 20. **Service-role client is not cookie-based** — `createServiceRoleClient()` uses `SUPABASE_SERVICE_ROLE_KEY` directly (no session). Never use for user-facing queries.
+21. **`deactivateTherapist` uses two clients** — anon client (`createClient()`) for session auth and role guard only; service-role client for all DB reads and writes (dept guard, swap/PRN cleanup, users update). This is intentional: the cleanup steps mutate rows belonging to other users, which RLS on the anon client would reject.
 
 ---
 
@@ -234,4 +242,5 @@ RESEND_API_KEY                  # from: Resend dashboard → API Keys
   - [ ] **Env:** `.env.local` / production have Phase 8 vars: `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, and `RESEND_API_KEY` if using block-post email.
   - [ ] **Smoke-test:** Restart dev server after env changes; trigger notifications (e.g. post preliminary or final, or swap flow); confirm rows in `notifications` and bell badge/panel behavior; optionally enable push on `/today` and confirm `push_subscriptions` rows.
   - [ ] **Resend:** If using email, verify the `schedule@teamwise.work` domain (or chosen from-address) in Resend so mail delivers.
-- **Phase 9+:** Candidates — richer exports, `/staff` & `/settings` depth, CI-hardened E2E with isolated DB.
+- **Phase 9 (Staff Management & Settings):** Planned — manager-only `/staff` page (invite/edit/soft-deactivate therapists) + `/settings` page (coverage thresholds per shift type). Server actions: `inviteTherapist` (service-role + compensating delete), `updateTherapist`, `deactivateTherapist` (cancels swaps + declines PRN interest), `updateCoverageThresholds` (upsert with server-side validation). Pure helper `lib/settings/validateCoverageThresholds` + 4 unit tests. Spec: `docs/superpowers/specs/2026-03-24-phase9-staff-settings-design.md`. Plan: `docs/superpowers/plans/2026-03-25-phase9-staff-settings.md`.
+- **Phase 10+:** Candidates — richer exports, CI-hardened E2E with isolated DB.
