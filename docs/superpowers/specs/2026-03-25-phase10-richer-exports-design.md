@@ -73,14 +73,17 @@ date, shift_type, planned_headcount, actual_headcount, threshold, status
 Where `threshold` is `coverage_thresholds.minimum_staff` for the matching `shift_type`, and `status` is:
 - `n/a` if `actual_headcount` is not available (block is not active/completed)
 - `critical` if `actual_headcount < threshold`
-- `warning` if `actual_headcount === threshold`
-- `ok` if `actual_headcount > threshold`
+- `ok` if `actual_headcount >= threshold`
+
+Note: meeting the minimum threshold exactly is considered `ok` (minimum requirement met). There is no `warning` tier — the threshold is a hard minimum, not a target.
 
 **Return type:** `{ data: string } | { error: string }`
 
-**Client component:** `ExportCoverageButton` — calls action, triggers download via `Blob` + `URL.createObjectURL`, shows toast on error
+**Prop threading:** The coverage page is a server component. The resolved `block.id` (not the raw `searchParams.blockId`, since the page defaults to the first block when none is specified) must be passed as a prop to `ExportCoverageButton`.
 
-**Filename:** `coverage-<block-name>-<date>.csv`
+**Client component:** `ExportCoverageButton` — accepts `blockId: string` prop, calls `exportCoverageCSV(blockId)`, triggers download via `Blob` + `URL.createObjectURL`, shows toast on error.
+
+**Filename:** `coverage-<block-id>-<date>.csv`
 
 ---
 
@@ -99,9 +102,9 @@ export interface OpsFilterParams {
   to?: string
 }
 ```
-Import this type in both `app/actions/ops.ts` and the ops page component.
+Import this type in both `app/actions/ops.ts` and the ops page component. Refactor `app/(app)/ops/page.tsx` to import `OpsFilterParams` from `lib/ops/types.ts` and replace the existing inline `searchParams` shape with it — prevents two parallel type definitions from drifting.
 
-**Data source:** Reuses `buildBlockHealthRows` from `lib/ops/block-health.ts` — no new Supabase queries. The function returns `BlockHealthRow[]` with camelCase fields; convert to snake_case CSV headers on output.
+**Data source:** `buildBlockHealthRows` is a pure function that requires pre-fetched data. The server action must replicate the same Supabase queries the ops page runs. Extract these into a shared fetch helper `lib/ops/fetch-block-health.ts` that both the ops page and `exportKPICSV` call. The helper accepts `OpsFilterParams` and returns the raw inputs for `buildBlockHealthRows`. This avoids duplicating 8+ queries between the page and the action. The helper queries: `schedule_blocks`, `shifts`, `swap_requests` (pending), `preliminary_change_requests` (pending), `prn_shift_interest`, and `shift_actual_headcount`. After extracting the helper, update the ops page to call it instead of running queries inline. `buildBlockHealthRows` returns `BlockHealthRow[]` with camelCase fields; convert to snake_case CSV headers on output.
 
 **CSV columns** (mapped from `BlockHealthRow` camelCase fields):
 ```
@@ -111,6 +114,8 @@ pending_prn_interest, low_coverage_dates, risk_score
 ```
 
 Note: no `block_name` column — `BlockHealthRow` only exposes `blockId`. Use `block_id` directly.
+
+Note: `BlockHealthRow.riskScore` has a JSDoc comment saying "Sum of the six metrics" but actually sums five values. Do not "fix" this during implementation — changing the calculation would silently alter the existing ops dashboard risk scores.
 
 One row per block (scoped by the same filters already applied on the ops dashboard).
 
@@ -173,7 +178,7 @@ All CSV server actions return `{ data: string } | { error: string }`. Client com
 | Action | File | Notes |
 |--------|------|-------|
 | `exportCoverageCSV(blockId)` | `app/actions/coverage.ts` (new file) | Manager-only |
-| `exportKPICSV(filters)` | `app/actions/ops.ts` | Manager-only; add to existing file |
+| `exportKPICSV(filters)` | `app/actions/ops.ts` (new file) | Manager-only |
 | `exportStaffCSV()` | `app/actions/staff.ts` | Manager-only; add to existing file |
 
 ---
@@ -186,6 +191,7 @@ All CSV server actions return `{ data: string } | { error: string }`. Client com
 | `app/(app)/schedule/layout.tsx` | Pass-through layout to scope print CSS (new) |
 | `lib/exports/download-csv.ts` | Shared Blob download helper (new) |
 | `lib/ops/types.ts` | `OpsFilterParams` interface shared by ops page + export action (new) |
+| `lib/ops/fetch-block-health.ts` | Shared Supabase fetch helper for ops page + KPI export action (new) |
 
 ---
 
