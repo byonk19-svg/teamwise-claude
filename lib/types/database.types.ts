@@ -131,7 +131,7 @@ export type Database = {
           partner_id: string
           partner_shift_id: string
           is_cross_shift: boolean
-          status: 'pending' | 'approved' | 'rejected' | 'expired'
+          status: 'pending' | 'approved' | 'rejected' | 'expired' | 'cancelled'
           expires_at: string
           request_note: string | null
           response_note: string | null
@@ -213,6 +213,34 @@ export type Database = {
           created_at?: string
         }
         Update: never
+      }
+      coverage_thresholds: {
+        Row: {
+          id: string
+          department_id: string
+          shift_type: 'day' | 'night'
+          minimum_staff: number
+          ideal_staff: number
+          maximum_staff: number
+          updated_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          department_id: string
+          shift_type: 'day' | 'night'
+          minimum_staff: number
+          ideal_staff: number
+          maximum_staff: number
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Update: Partial<{
+          minimum_staff: number
+          ideal_staff: number
+          maximum_staff: number
+          updated_by: string | null
+          updated_at: string
+        }>
       }
     }
     Views: {

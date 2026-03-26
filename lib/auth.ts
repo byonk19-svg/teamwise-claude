@@ -1,8 +1,8 @@
 // lib/auth.ts
-// The ONLY file in the codebase that calls Supabase Auth APIs.
-// All other files import from here — never from @supabase/ssr or @supabase/supabase-js auth directly.
-// Exception: middleware.ts calls Supabase directly (documented exception — Next.js middleware
-// cannot use next/headers cookies the same way, so it must construct its own Supabase client).
+// Session Auth (getUser, signIn, signOut, onAuthStateChange): use this module only — do not call
+// supabase.auth.* from app code elsewhere (see CLAUDE.md).
+// Documented exceptions: middleware.ts (session refresh); app/actions/staff.ts + supabase/seed.ts
+// for auth.admin.* via service-role where required.
 
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
 import { createClient as createBrowserClient } from '@/lib/supabase/client'

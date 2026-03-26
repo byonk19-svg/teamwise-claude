@@ -28,7 +28,7 @@ npm run lint         # ESLint
 app/
   (app)/            # Authenticated routes (layout wraps with Sidebar + TopBar)
   (auth)/           # Unauthenticated routes (/login)
-  actions/          # All server actions (schedule, swap-requests, change-requests, etc.)
+  actions/          # Server actions (schedule, swaps, change-requests, notifications, staff, settings, …)
   page.tsx          # Root redirect — therapist → /today, manager → /schedule
 
 components/
@@ -53,17 +53,19 @@ lib/
   schedule/         # block-status helpers, cell-colors, optimistic updates, swap logic
   today/            # buildWeekWindow, resolveLeadName, computeUnsignaledCount
   notifications/    # create, push, email, payloads
-  settings/         # validateCoverageThresholds pure helper
+  settings/         # validate.ts (validateCoverageThresholds)
   ops/              # KPI helpers
   server/           # deferred-work.ts (runAfterResponse shim)
   types/
     database.types.ts  # Generated + manual table type stubs
 
+worker/             # Custom PWA service-worker chunk (push + notificationclick) — picked up by @ducanh2912/next-pwa
+
 supabase/
-  migrations/       # SQL migrations 001–006
+  migrations/       # SQL migrations 001–007
   seed.ts           # Dev seed script
 tests/
-  unit/             # Vitest unit tests (112 as of Phase 7)
+  unit/             # Vitest unit tests (114; includes staff-settings + notification-payloads)
   e2e/              # Playwright specs (require E2E_AUTH=true + real .env.local)
 ```
 
@@ -119,14 +121,7 @@ Supabase client doesn't auto-type RPCs. Cast as `any` to call: `(supabase as any
 `lib/supabase/server.ts` uses `require('next/headers')` inside the function body (not a top-level import). This is intentional — Next.js 14 causes client bundle conflicts when `next/headers` is imported at the top level. Do not "fix" this.
 
 ### Service-Role Client (Phase 8+)
-`lib/supabase/service-role.ts` exports `createServiceRoleClient()` — uses `SUPABASE_SERVICE_ROLE_KEY` to bypass RLS. **Only import in server-side files** (`lib/notifications/*`, `app/actions/staff.ts`). Never import in client components, middleware, or `lib/supabase/server.ts`. Needed for: notification inserts (writing rows for other users' `user_id`), `auth.admin.*` APIs (invite/delete user), and deactivation cleanup steps that mutate other users' rows.
-
-### Background Work with `unstable_after` (Phase 8)
-`unstable_after` from `next/server` runs a callback after the response is sent — used for push and email dispatch so they don't block the server action response. Requires `experimental: { after: true }` in `next.config.js`. Import as:
-```typescript
-import { unstable_after as after } from 'next/server'
-```
-This is the Next.js 14 experimental API; Next.js 15+ uses `after` directly from `next/server` (stable).
+`lib/supabase/service-role.ts` exports `createServiceRoleClient()` — uses `SUPABASE_SERVICE_ROLE_KEY` to bypass RLS. **Only import in server-side files** (`lib/notifications/*`, server actions that need it). Never import in client components, middleware, or `lib/supabase/server.ts`. Needed for: notification inserts (writing rows for other users' `user_id`), `subscribeToPush` upserts, `auth.admin.*` APIs (invite/delete user), and deactivation cleanup steps that mutate other users' rows.
 
 ### CSS Grid Layout
 The schedule grid uses a shared `.grid-row` CSS class:
@@ -169,6 +164,7 @@ All tables have RLS enabled. Broad authenticated-only policies (all phases so fa
 - `supabase/migrations/004_phase5_operational.sql` — `operational_entries`, actuals view, RPCs, pg_cron auto-activate final→active (applied)
 - `supabase/migrations/005_phase5_rls_hardening.sql` — department-scoped RLS for `swap_requests` and `operational_entries` (applied)
 - `supabase/migrations/006_phase8_notifications.sql` — `notifications` + `push_subscriptions` tables + RLS (Phase 8)
+- `supabase/migrations/007_phase9_swap_cancelled.sql` — `swap_requests.status` may be `cancelled` (therapist deactivation)
 
 ### Seed Data (after running `npm run seed`)
 - If `manager@teamwise.dev` already exists in `public.users`, the seed script **exits successfully without changes** (safe to re-run).
@@ -196,7 +192,7 @@ RESEND_API_KEY                  # from: Resend dashboard → API Keys
 
 ## Testing
 
-- **Unit tests:** Vitest — `npm test`. Keep all tests passing before any commit. 110 tests as of Phase 8; 114 planned after Phase 9 (4 new: `validateCoverageThresholds`).
+- **Unit tests:** Vitest — `npm test`. Keep all tests passing before any commit. **114** unit tests (includes `staff-settings` + `notification-payloads`).
 - **E2E tests:** Playwright — requires real `.env.local` credentials and `E2E_AUTH=true` for authenticated specs. Use `loginAsManager` from `tests/e2e/helpers/auth.ts` (waits up to 60s for `/schedule`; throws with login alert text or env hint on failure). After login, middleware sends users to `/`; `app/page.tsx` then redirects **managers → `/schedule`**, **therapists → `/today`**. `loginAsManager` remains correct for manager flows. `tests/e2e/phase5-operational.spec.ts` runs **serial** within the file so revert/coverage/week tests do not race the same DB. `playwright.config.ts` uses extended timeouts and **one worker** locally so `next dev` is not overloaded; avoid running two servers on port 3000.
 - Vitest is configured to exclude `tests/e2e/**` — do not remove this exclusion.
 
@@ -222,9 +218,11 @@ RESEND_API_KEY                  # from: Resend dashboard → API Keys
 16. **`swap_requests` has no `shift_date`** — Join through `requester_shift_id` / `partner_shift_id` → `shifts.shift_date` when displaying dates.
 17. **`notifications` / `push_subscriptions` require `(supabase as any)`** — See Manual Table Access Pattern above.
 18. **Post-response work (Phase 8)** — Push/email after server actions use **`runAfterResponse`** from `lib/server/deferred-work.ts` (queueMicrotask + detached promise). This repo’s Next 14.2.x build does not type-export `unstable_after` from `next/server`; do not add `experimental.after` to `next.config.js` unless upgrading to a Next version that supports it and switching call sites to the stable `after` API.
-19. **Email from domain** — All Resend emails use `schedule@teamwise.work`. The domain must be verified in Resend before emails will deliver.
-20. **Service-role client is not cookie-based** — `createServiceRoleClient()` uses `SUPABASE_SERVICE_ROLE_KEY` directly (no session). Never use for user-facing queries.
-21. **`deactivateTherapist` uses two clients** — anon client (`createClient()`) for session auth and role guard only; service-role client for all DB reads and writes (dept guard, swap/PRN cleanup, users update). This is intentional: the cleanup steps mutate rows belonging to other users, which RLS on the anon client would reject.
+19. **PWA push UI (Phase 8)** — `worker/index.js` is compiled by `@ducanh2912/next-pwa` into `public/worker-*.js` and `importScripts`’d from `sw.js`. It handles **`push`** (shows OS notification from JSON `{ title, body, href? }`) and **`notificationclick`**. **Middleware** must not auth-guard `sw.js`, `worker-*.js`, `workbox-*.js`, etc. (see `middleware.ts` matcher).
+20. **Email from domain** — All Resend emails use `schedule@teamwise.work`. The domain must be verified in Resend before emails will deliver.
+21. **Service-role client is not cookie-based** — `createServiceRoleClient()` uses `SUPABASE_SERVICE_ROLE_KEY` directly (no session). Never use for user-facing queries.
+22. **`deactivateTherapist` uses two clients** — anon client (`createClient()`) for session auth and role guard only; service-role client for all DB reads and writes (dept guard, swap/PRN cleanup, users update). This is intentional: the cleanup steps mutate rows belonging to other users, which RLS on the anon client would reject.
+23. **`swap_requests.status = 'cancelled'`** — requires migration `007_phase9_swap_cancelled.sql` (extends the DB check constraint). Without it, deactivation fails when pending swaps exist.
 
 ---
 
@@ -237,10 +235,9 @@ RESEND_API_KEY                  # from: Resend dashboard → API Keys
 - **Phase 5 (Operational Layer):** Complete — `operational_entries` table/RPCs + RLS, shift actuals view, operational code entry in `CellPanel` + mobile `WeekView`, coverage actuals + alerts, audit log page + CSV export, revert-to-final flow, and hardening/observability updates.
 - **Phase 6 (Operational Dashboard):** Complete — manager-only `/ops` read-only dashboard: KPI cards (aggregated + drill-downs), filters (shift type, block, date range), **Block health** table (per-block risk metrics, Schedule/Focus links), consolidated event feed with drill-downs, Supabase Realtime refresh (operational entries, swaps, change requests, shifts, PRN interest batched by `shift_id`). Playwright smoke in `tests/e2e/ops.spec.ts` when `E2E_AUTH=true`.
 - **Phase 7 (Therapist Today Hub):** Complete — `/today` therapist landing (shift card, week strip, swaps, op codes, block context, PRN open-shift count). `app/(app)/today/page.tsx` parallel fetches; `lib/today/helpers.ts` (`buildWeekWindow`, `resolveLeadName`, `computeUnsignaledCount`) + `tests/unit/today-helpers.test.ts` (11 tests). `lib/schedule/cell-colors.ts` + `components/today/*`. Post-login: middleware → `/`, then `app/page.tsx` branches by role (therapist → `/today`, manager → `/schedule`). Sidebar “Today” for therapists. Plan reference: `docs/superpowers/plans/2026-03-24-phase7-today-hub.md`.
-- **Phase 8 (Notifications):** In progress — persistent in-app + push + email notification system. `notifications` table + `push_subscriptions` table (migration `006_phase8_notifications.sql`). Server-action-inline pattern: each triggering action writes notification rows via service-role; push/email run in **`runAfterResponse`** (`lib/server/deferred-work.ts` — Next 14.2.x does not export `unstable_after` from `next/server`). 5 event types: `swap_requested`, `swap_resolved`, `change_request_resolved`, `prn_interest_resolved`, `block_posted`. Email (Resend, `schedule@teamwise.work`) for `block_posted` only. TopBar bell with unread badge + `NotificationPanel` client component. Push via `web-push` (VAPID). Plan reference: `docs/superpowers/plans/2026-03-24-phase8-notifications.md`.
-- **Phase 8 — Pending (verify before marking complete):**
-  - [ ] **Env:** `.env.local` / production have Phase 8 vars: `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, and `RESEND_API_KEY` if using block-post email.
-  - [ ] **Smoke-test:** Restart dev server after env changes; trigger notifications (e.g. post preliminary or final, or swap flow); confirm rows in `notifications` and bell badge/panel behavior; optionally enable push on `/today` and confirm `push_subscriptions` rows.
-  - [ ] **Resend:** If using email, verify the `schedule@teamwise.work` domain (or chosen from-address) in Resend so mail delivers.
-- **Phase 9 (Staff Management & Settings):** Planned — manager-only `/staff` page (invite/edit/soft-deactivate therapists) + `/settings` page (coverage thresholds per shift type). Server actions: `inviteTherapist` (service-role + compensating delete), `updateTherapist`, `deactivateTherapist` (cancels swaps + declines PRN interest), `updateCoverageThresholds` (upsert with server-side validation). Pure helper `lib/settings/validateCoverageThresholds` + 4 unit tests. Spec: `docs/superpowers/specs/2026-03-24-phase9-staff-settings-design.md`. Plan: `docs/superpowers/plans/2026-03-25-phase9-staff-settings.md`.
+- **Phase 8 (Notifications):** Complete — persistent in-app inbox (TopBar `NotificationBell` + `NotificationPanel`), `web-push` + VAPID, optional Resend email for `block_posted`. Migration `006_phase8_notifications.sql` (`notifications`, `push_subscriptions`, RLS). Triggers write rows via service-role; **`runAfterResponse`** (`lib/server/deferred-work.ts`) dispatches push/email after the action returns (Next 14.2.x has no `unstable_after` in typings). **`subscribeToPush`** upserts subscriptions; **`worker/index.js`** handles `push` + `notificationclick` for OS notifications. Event types: `swap_requested`, `swap_resolved`, `change_request_resolved`, `prn_interest_resolved`, `block_posted`. Plan: `docs/superpowers/plans/2026-03-24-phase8-notifications.md`.
+- **Phase 8 — Optional follow-ups (production / email):**
+  - [ ] **Production env:** set `NEXT_PUBLIC_VAPID_*`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `SUPABASE_SERVICE_ROLE_KEY`, and `RESEND_API_KEY` on the host if using block-post email.
+  - [ ] **Resend:** verify sending domain for `schedule@teamwise.work` (or change `from` in `lib/notifications/email.ts` to match a verified domain).
+- **Phase 9 (Staff Management & Settings):** Complete — manager-only `/staff` (invite via Supabase email, edit profile, soft-deactivate with pending swap cancel + PRN interest decline) and `/settings` (coverage threshold upsert). `lib/settings/validate.ts` + `tests/unit/staff-settings.test.ts` (4 tests). Service-role: `inviteTherapist` / `deactivateTherapist`. Migration `007_phase9_swap_cancelled.sql` for `cancelled` swap status. Spec: `docs/superpowers/specs/2026-03-24-phase9-staff-settings-design.md`. Plan: `docs/superpowers/plans/2026-03-25-phase9-staff-settings.md`.
 - **Phase 10+:** Candidates — richer exports, CI-hardened E2E with isolated DB.
