@@ -56,7 +56,7 @@ lib/
   settings/         # validate.ts (validateCoverageThresholds)
   exports/          # Pure CSV builder helpers (build-coverage-csv, build-kpi-csv, build-staff-csv, download-csv)
   ops/              # KPI helpers, block-health, fetch-block-health, types (OpsFilterParams)
-  ops/              # KPI helpers
+  fairness/         # fetch-therapist-equity.ts (fetchEquityRows + pivotEquityRows)
   server/           # deferred-work.ts (runAfterResponse shim)
   types/
     database.types.ts  # Generated + manual table type stubs
@@ -67,7 +67,7 @@ supabase/
   migrations/       # SQL migrations 001–007
   seed.ts           # Dev seed script
 tests/
-  unit/             # Vitest unit tests (118; includes staff-settings + notification-payloads + exports)
+  unit/             # Vitest unit tests (135 after Phase 11; includes staff-settings + notification-payloads + exports + conflict-detection + fairness)
   e2e/              # Playwright specs (require E2E_AUTH=true + real .env.local)
 ```
 
@@ -194,9 +194,36 @@ RESEND_API_KEY                  # from: Resend dashboard → API Keys
 
 ## Testing
 
-- **Unit tests:** Vitest — `npm test`. Keep all tests passing before any commit. **118** unit tests (includes `staff-settings` + `notification-payloads` + `exports`).
-- **E2E tests:** Playwright — requires real `.env.local` credentials and `E2E_AUTH=true` for authenticated specs. Use `loginAsManager` from `tests/e2e/helpers/auth.ts` (waits up to 60s for `/schedule`; throws with login alert text or env hint on failure). After login, middleware sends users to `/`; `app/page.tsx` then redirects **managers → `/schedule`**, **therapists → `/today`**. `loginAsManager` remains correct for manager flows. `tests/e2e/phase5-operational.spec.ts` runs **serial** within the file so revert/coverage/week tests do not race the same DB. `playwright.config.ts` uses extended timeouts and **one worker** locally so `next dev` is not overloaded; avoid running two servers on port 3000.
-- Vitest is configured to exclude `tests/e2e/**` — do not remove this exclusion.
+### Default: CI (no Supabase in the cloud)
+
+- **`.github/workflows/ci.yml`** — on pushes/PRs to **`main`** / **`master`**: **`npm run lint`** + **`npm test`** (Node 20). This is the primary quality gate; contributors do not need to configure GitHub E2E to merge safely.
+
+### Unit tests (Vitest)
+
+- **`npm test`** — **135** tests after Phase 11 (includes `staff-settings`, `notification-payloads`, `exports`, `conflict-detection`, `fairness`). Keep them green before commits.
+- Global setup **`tests/setup.ts`**: small **`HTMLAnchorElement.prototype.click`** shim so CSV download tests do not log jsdom’s “navigation to another Document” warning.
+- Vitest **excludes** `tests/e2e/**` — do not remove that exclusion.
+
+### Local E2E (Playwright)
+
+- **`npm run test:e2e`** / **`npm run test:e2e:ui`**
+- Requires real **`.env.local`** and **`npm run seed`** for `manager@teamwise.dev` / `password123`.
+- Set **`E2E_AUTH=true`** so authenticated suites run (`ops`, `phase5-operational`, `grid`, `cell-panel` use the same gate).
+- **`tests/e2e/helpers/auth.ts`** — `loginAsManager` waits up to 60s for **`/schedule`**; on failure, checks login **`alert`** or suggests env/seed.
+- Post-login: middleware → **`/`**; **`app/page.tsx`** — managers → **`/schedule`**, therapists → **`/today`**.
+- **`tests/e2e/phase5-operational.spec.ts`** uses **`test.describe.configure({ mode: 'serial' })`** so revert/coverage/mobile flows do not race the same DB.
+- **Local `playwright.config.ts`**: **`npm run dev`** for `webServer`, **one worker**, **`reuseExistingServer: true`** when not in CI — avoid two servers on port 3000.
+
+### Optional: E2E in GitHub Actions
+
+Use **only if** you want browser tests on demand against a real Supabase project (e.g. CI-dedicated). It is **not** part of the default merge path.
+
+1. **Supabase:** Apply **`supabase/migrations`**; run **`npm run seed`** once against that project (from a machine with URL + service role key).
+2. **Repo secrets** (Settings → Actions): **`NEXT_PUBLIC_SUPABASE_URL`**, **`NEXT_PUBLIC_SUPABASE_ANON_KEY`**, **`SUPABASE_SERVICE_ROLE_KEY`**.
+3. **Run** **`.github/workflows/e2e.yml`** via **Actions → Run workflow** (manual). On **`CI`**, Playwright uses **`npm run build`** then **`npm run start`** (see **`playwright.config.ts`**).
+4. To run E2E on every push later, add a **`push:`** trigger to **`e2e.yml`** (comments at top of that file).
+
+For stricter isolation, point those secrets at a **separate** Supabase project used only for automation.
 
 ---
 
@@ -225,6 +252,9 @@ RESEND_API_KEY                  # from: Resend dashboard → API Keys
 21. **Service-role client is not cookie-based** — `createServiceRoleClient()` uses `SUPABASE_SERVICE_ROLE_KEY` directly (no session). Never use for user-facing queries.
 22. **`deactivateTherapist` uses two clients** — anon client (`createClient()`) for session auth and role guard only; service-role client for all DB reads and writes (dept guard, swap/PRN cleanup, users update). This is intentional: the cleanup steps mutate rows belonging to other users, which RLS on the anon client would reject.
 23. **`swap_requests.status = 'cancelled'`** — requires migration `007_phase9_swap_cancelled.sql` (extends the DB check constraint). Without it, deactivation fails when pending swaps exist.
+24. **`preliminary_change_requests` column names** — columns are `requester_id` (not `user_id`), `response_note` (not `manager_note`), and status values are `'pending' | 'accepted' | 'rejected'` (not `approved/denied`). Access via `(supabase as any)`.
+25. **Availability conflict detection (Phase 11)** — `lib/schedule/conflict-detection.ts` exports `detectConflict(cellState, availEntryType, blockShiftType)`. `availabilityMap` is built in `schedule/page.tsx` via two-step fetch (submissions → entries), keyed `${userId}:${date}` (colon separator, matching `shiftIndex`). `GridCell` renders a yellow border + ⚠ icon (`availConflict` prop, manager-only). `CellPanel` shows an `AlertDialog` before saving `'working'` on a conflicting cell.
+26. **`/my-schedule` and `/fairness` routes (Phase 11)** — therapist-only and manager-only respectively. `/my-schedule` fetches working shifts + blocks (typed queries) + pending swaps (`(supabase as any)`). `/fairness` uses `fetchEquityRows` (3 separate typed queries joined in memory, pattern from `fetch-block-health.ts`) + pure `pivotEquityRows`.
 
 ---
 
@@ -242,5 +272,6 @@ RESEND_API_KEY                  # from: Resend dashboard → API Keys
   - [ ] **Production env:** set `NEXT_PUBLIC_VAPID_*`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `SUPABASE_SERVICE_ROLE_KEY`, and `RESEND_API_KEY` on the host if using block-post email.
   - [ ] **Resend:** verify sending domain for `schedule@teamwise.work` (or change `from` in `lib/notifications/email.ts` to match a verified domain).
 - **Phase 9 (Staff Management & Settings):** Complete — manager-only `/staff` (invite via Supabase email, edit profile, soft-deactivate with pending swap cancel + PRN interest decline) and `/settings` (coverage threshold upsert). `lib/settings/validate.ts` + `tests/unit/staff-settings.test.ts` (4 tests). Service-role: `inviteTherapist` / `deactivateTherapist`. Migration `007_phase9_swap_cancelled.sql` for `cancelled` swap status. Spec: `docs/superpowers/specs/2026-03-24-phase9-staff-settings-design.md`. Plan: `docs/superpowers/plans/2026-03-25-phase9-staff-settings.md`.
-- **Phase 10 (Richer Exports):** Planned — browser print PDF for schedule grid (`@media print` + `PrintButton`), Coverage CSV (`exportCoverageCSV` in `app/actions/coverage.ts`), KPI CSV (`exportKPICSV` via `lib/ops/fetch-block-health.ts` shared helper), Staff Roster CSV (`exportStaffCSV` added to `app/actions/staff.ts`). Pure CSV builders in `lib/exports/`. 4 new Vitest tests (`tests/unit/exports.test.ts`). No new npm dependencies. Spec: `docs/superpowers/specs/2026-03-25-phase10-richer-exports-design.md`. Plan: `docs/superpowers/plans/2026-03-25-phase10-richer-exports.md`.
-- **Phase 11+:** Candidates — CI-hardened E2E with isolated DB.
+- **Phase 10 (Richer Exports):** Complete — browser print PDF for schedule grid (`@media print` + `PrintButton`), Coverage CSV (`exportCoverageCSV`), KPI CSV (`exportKPICSV` via shared `fetch-block-health.ts` helper), Staff Roster CSV (`exportStaffCSV`). Pure CSV builders in `lib/exports/`. 4 Vitest tests in `tests/unit/exports.test.ts` (**118** total). No new npm dependencies.
+- **Phase 11 (Therapist UX Completion & Schedule Intelligence):** Planned — fix broken sidebar nav (`/open-shifts` → `/availability/open-shifts`; add My Schedule + Fairness items), therapist `/change-requests` page (read-only view of request status + manager response), therapist `/my-schedule` page (upcoming/past working shifts across blocks with swap badge), `detectConflict()` pure helper + 11 unit tests, availability conflict indicator on `GridCell` (yellow border + ⚠, manager-only), `AlertDialog` confirm-before-save in `CellPanel` when scheduling a `cannot_work` date, manager `/fairness` page (`fetchEquityRows` + `pivotEquityRows` with 6 unit tests, day/night counts per block). No new migrations, no new npm deps. **135 unit tests** total. Spec: `docs/superpowers/specs/2026-03-25-phase11-therapist-ux-schedule-intelligence-design.md`. Plan: `docs/superpowers/plans/2026-03-25-phase11-therapist-ux-schedule-intelligence.md`.
+- **Phase 12+:** Candidates — CI-hardened E2E with isolated DB.
