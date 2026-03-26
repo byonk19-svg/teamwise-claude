@@ -1,5 +1,12 @@
 # Phase 8 — Notifications Implementation Plan
 
+> **Implementation status:** **Shipped** in this repo. The sections below are the original plan; treat them as historical detail.
+>
+> **Corrections vs the plan text:**
+> - Post-response work uses **`runAfterResponse`** in `lib/server/deferred-work.ts`, not `unstable_after` / `experimental.after` (Next 14.2.x here does not use that pattern).
+> - **PWA push:** source lives in **`worker/index.js`**; `@ducanh2912/next-pwa` emits **`public/worker-*.js`** (listed in `.gitignore`). **Middleware** must exclude `worker-*`, `workbox-*`, `swe-worker-*`, `fallback-*`, and `sw.js` from the auth matcher so `importScripts` is not redirected to login.
+> - Service-role client: **`lib/supabase/service-role.ts`** — also used for `subscribeToPush` and (Phase 9) staff invite/deactivate.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add persistent in-app, push, and email notifications so therapists and managers are alerted to swap requests, schedule changes, and resolution events without having to actively check the app.

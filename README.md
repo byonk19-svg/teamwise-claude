@@ -6,10 +6,10 @@ Teamwise is a respiratory therapy scheduling app for building and operating 6-we
 
 - Next.js 14 (App Router) + TypeScript
 - Supabase (Auth, Postgres, RLS, Realtime)
-- Tailwind CSS + shadcn/ui
+- Tailwind CSS + shadcn/ui + PWA (`@ducanh2912/next-pwa`)
 - Vitest + Playwright
 
-## Local Development
+## Local development
 
 ```bash
 npm install
@@ -18,45 +18,57 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-## Core Commands
+## Core commands
 
 ```bash
-npm run dev        # run local app
-npm test           # unit tests
-npx tsc --noEmit   # typecheck
-npm run build      # production build check
-npm run lint       # lint
-npm run seed       # seed local/dev Supabase data
+npm run dev        # local app (port 3000)
+npm test           # unit tests (Vitest)
+npm run build      # production build (includes PWA + custom worker)
+npm run lint       # ESLint
+npm run seed       # seed Supabase dev data (see CLAUDE.md)
 ```
 
-## Phase 5 Notes (Operational Layer)
+For **PWA / web push** locally, use a production build — the service worker is not enabled the same way under `next dev`:
 
-- Mobile WeekView supports in-shift operational code entry (`OC`, `CI`, `CX`, `LE`) via bottom sheet.
-- Coverage page shows planned + actual headcount and live alert hooks.
-- Completed blocks expose an audit log route at `/audit/[blockId]` with CSV export.
+```bash
+npm run build && npm run start
+```
 
-## Phase 6 Notes (Ops Dashboard v1) — complete
+## Environment variables
 
-- Manager-only `/ops` page includes KPI cards for lead gaps, pending workflow items, and low coverage dates.
-- Supports filter controls for shift type, block, and date range.
-- Includes a consolidated operational event feed (operational entries, swaps, change requests, and PRN interest activity).
-- KPI cards and event rows include drill-down links into existing manager workflows (`/coverage`, `/swaps`, `/schedule/inbox`, and `/audit/[blockId]`).
-- The dashboard listens for Supabase Realtime changes on operational entries, swaps, change requests, shifts, and PRN interest (batched by `shift_id` for the shifts currently loaded) and refreshes KPIs and the event feed (debounced).
-- **Block health** table lists each visible block with per-block lead gaps, pending workflow counts, low-coverage dates, a combined risk score, and links to **Schedule** or **Focus** (same filters, one block).
+Create **`.env.local`** (gitignored) with at minimum:
+
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+- **Notifications / push (Phase 8):** `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`; optional `RESEND_API_KEY` for block-post email
+
+Full list and behavior are documented in [**CLAUDE.md**](CLAUDE.md).
+
+## Features by phase (summary)
+
+| Phase | Highlights |
+|-------|------------|
+| **5** | Operational codes (`OC`/`CI`/`CX`/`LE`), coverage actuals, `/audit/[blockId]` + CSV |
+| **6** | Manager `/ops` dashboard, Realtime refresh, block health |
+| **7** | Therapist `/today` hub |
+| **8** | In-app notifications, optional push + email, `worker/index.js` for OS notifications |
+| **9** | Manager `/staff` (invite / edit / deactivate), `/settings` (coverage thresholds); migration `007` adds `swap_requests.status = cancelled` |
+
+**Authoritative detail:** table list, RPCs, migrations **001–007**, auth rules, and gotchas → **CLAUDE.md**.
+
+## Applying the database
+
+Run SQL migrations in order from `supabase/migrations/` (see `supabase/migrations/README.md`). Remote Supabase: SQL Editor, paste each file, run.
 
 ## Troubleshooting
 
-If UI interactions stop working after code changes (for example, cell taps do nothing, coverage content disappears, or `/_next/static/chunks/*` returns 404):
+If UI breaks after changes (cells inert, 404 on `/_next/static/chunks/*`):
 
-1. Stop the running dev server.
-2. Clear build output (`.next`).
-3. Restart with `npm run dev`.
-4. Hard refresh the browser.
-
-This usually resolves stale chunk/hydration mismatch during local development.
+1. Stop the dev server.
+2. Remove `.next`.
+3. `npm run dev` again and hard-refresh the browser.
 
 ## Playwright E2E
 
-- Prefer **one** dev server on port 3000 (either let Playwright start it via `webServer`, or run `npm run dev` yourself with `reuseExistingServer` — not both on different ports).
-- Authenticated specs need `.env.local` with valid Supabase keys, `npm run seed`, and `E2E_AUTH=true`.
-- Local runs use **one worker** by default to avoid starving `next dev`; first compile can take 30s+.
+- Prefer **one** dev server on port 3000 (Playwright `webServer` **or** manual `npm run dev`, not both).
+- Authenticated specs need `.env.local`, `npm run seed`, and `E2E_AUTH=true`.
+- Default config uses **one worker** locally; first compile can take 30s+.

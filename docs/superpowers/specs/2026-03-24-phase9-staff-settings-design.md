@@ -1,14 +1,15 @@
 # Phase 9: Staff Management & Settings — Design Spec
 
-**Date:** 2026-03-24
-**Project:** Teamwise
-**Scope:** Manager-only `/staff` and `/settings` pages
+**Date:** 2026-03-24  
+**Project:** Teamwise  
+**Scope:** Manager-only `/staff` and `/settings` pages  
+**Status:** Implemented in-repo. One follow-up migration extends `swap_requests` status values — see **`supabase/migrations/007_phase9_swap_cancelled.sql`** (required for deactivation when pending swaps exist).
 
 ---
 
 ## Overview
 
-Two new pages for the manager role. `/staff` provides full lifecycle management of therapist accounts: invite, edit profile attributes, and soft-deactivate. `/settings` exposes department-level coverage thresholds. No database migration required — all tables exist.
+Two new pages for the manager role. `/staff` provides full lifecycle management of therapist accounts: invite, edit profile attributes, and soft-deactivate. `/settings` exposes department-level coverage thresholds. Core tables (`users`, `coverage_thresholds`, etc.) already existed; **`007_phase9_swap_cancelled.sql`** adds `'cancelled'` to the `swap_requests` status check for the deactivation flow.
 
 ---
 

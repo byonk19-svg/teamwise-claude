@@ -1,5 +1,7 @@
 # Phase 9: Staff Management & Settings — Implementation Plan
 
+> **Implementation status:** **Shipped** in this repo (`/staff`, `/settings`, `app/actions/staff.ts`, `app/actions/settings.ts`, `lib/settings/validate.ts`). Apply **`supabase/migrations/007_phase9_swap_cancelled.sql`** on every Supabase environment so `deactivateTherapist` can set `swap_requests.status` to `cancelled`; without it, deactivation can fail when pending swaps exist.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add manager-only `/staff` page (invite/edit/deactivate therapists) and `/settings` page (coverage thresholds).
