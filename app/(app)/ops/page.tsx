@@ -4,13 +4,13 @@ import { createClient } from '@/lib/supabase/server'
 import { OpsFilters } from '@/components/ops/OpsFilters'
 import { OpsRealtimeRefresh } from '@/components/ops/OpsRealtimeRefresh'
 import { OpsEventFeed, type OpsEventItem } from '@/components/ops/OpsEventFeed'
+import { ExportKPIButton } from '@/components/ops/ExportKPIButton'
 import { buildBlockHealthRows } from '@/lib/ops/block-health'
 import { OpsBlockHealthTable } from '@/components/ops/OpsBlockHealthTable'
 import { buildOpsKpis } from '@/lib/ops/kpis'
-import type { Database } from '@/lib/types/database.types'
+import { fetchBlockHealthData } from '@/lib/ops/fetch-block-health'
+import type { OpsFilterParams } from '@/lib/ops/types'
 
-type BlockRow = Database['public']['Tables']['schedule_blocks']['Row']
-type ActualHeadcountRow = Database['public']['Views']['shift_actual_headcount']['Row']
 type OperationalEventRow = {
   id: string
   schedule_block_id: string
@@ -51,12 +51,7 @@ type PrnEventRow = {
 }
 
 interface PageProps {
-  searchParams: {
-    shift?: string
-    blockId?: string
-    from?: string
-    to?: string
-  }
+  searchParams: OpsFilterParams
 }
 
 export default async function OpsPage({ searchParams }: PageProps) {
@@ -91,125 +86,45 @@ export default async function OpsPage({ searchParams }: PageProps) {
   if (to) opsFocusParams.set('to', to)
   const opsFocusQueryStr = opsFocusParams.toString()
 
-  const { data: blocksData } = await supabase
-    .from('schedule_blocks')
-    .select('*')
-    .eq('department_id', profile.department_id)
-    .order('start_date', { ascending: false })
-  const allBlocks = (blocksData ?? []) as BlockRow[]
-
-  const filteredBlocks = allBlocks.filter((b) => {
-    if (shift !== 'all' && b.shift_type !== shift) return false
-    if (blockId && b.id !== blockId) return false
-    return true
-  })
-  const blockIds = filteredBlocks.map((b) => b.id)
+  const result = await fetchBlockHealthData(supabase, profile.department_id, searchParams)
+  const {
+    filteredBlocks,
+    allBlocks,
+    blockIds,
+    shifts,
+    pendingSwaps: pendingSwapsCount,
+    pendingChangeRequests: pendingChangeCount,
+    pendingPrnInterest,
+    pendingSwapBlockIds,
+    pendingChangeBlockIds,
+    pendingPrnByBlockId,
+    actualRows,
+  } = result
 
   if (blockIds.length === 0) {
     return (
       <div className="space-y-4">
-        <h1 className="text-lg font-semibold text-slate-900">Operations Dashboard</h1>
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-lg font-semibold text-slate-900">Operations Dashboard</h1>
+          <ExportKPIButton
+            filters={{
+              shift: searchParams.shift,
+              blockId: searchParams.blockId,
+              from: searchParams.from,
+              to: searchParams.to,
+            }}
+          />
+        </div>
         <OpsFilters shift={shift} blockId={blockId} from={from} to={to} blocks={allBlocks} />
         <p className="text-sm text-slate-500">No blocks matched your filters.</p>
       </div>
     )
   }
 
-  const shiftsQuery = supabase
-    .from('shifts')
-    .select('id, schedule_block_id, shift_date, cell_state, lead_user_id')
-    .in('schedule_block_id', blockIds)
-  if (from) shiftsQuery.gte('shift_date', from)
-  if (to) shiftsQuery.lte('shift_date', to)
-  const { data: shiftsData } = await shiftsQuery as {
-    data: Array<{
-      id: string
-      schedule_block_id: string
-      shift_date: string
-      cell_state: string
-      lead_user_id: string | null
-    }> | null
-    error: unknown
-  }
-  const shifts = shiftsData ?? []
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { count: pendingSwaps } = await (supabase as any)
-    .from('swap_requests')
-    .select('*', { count: 'exact', head: true })
-    .in('schedule_block_id', blockIds)
-    .eq('status', 'pending')
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: pendingSwapRows } = await (supabase as any)
-    .from('swap_requests')
-    .select('schedule_block_id')
-    .in('schedule_block_id', blockIds)
-    .eq('status', 'pending')
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { count: pendingChangeRequests } = await (supabase as any)
-    .from('preliminary_change_requests')
-    .select('*', { count: 'exact', head: true })
-    .in('schedule_block_id', blockIds)
-    .eq('status', 'pending')
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: pendingChangeRows } = await (supabase as any)
-    .from('preliminary_change_requests')
-    .select('schedule_block_id')
-    .in('schedule_block_id', blockIds)
-    .eq('status', 'pending')
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: pendingPrnRows } = await (supabase as any)
-    .from('prn_shift_interest')
-    .select('shift_id')
-    .eq('status', 'pending') as { data: Array<{ shift_id: string }> | null; error: unknown }
-
-  const blockShiftIds = new Set(shifts.map((s) => s.id))
-  const pendingPrnInterest = (pendingPrnRows ?? []).filter((r) => blockShiftIds.has(r.shift_id)).length
-
-  const shiftToBlockId = new Map(shifts.map((s) => [s.id, s.schedule_block_id]))
-  const pendingPrnByBlockId = new Map<string, number>()
-  for (const r of pendingPrnRows ?? []) {
-    if (!blockShiftIds.has(r.shift_id)) continue
-    const bid = shiftToBlockId.get(r.shift_id)
-    if (!bid) continue
-    pendingPrnByBlockId.set(bid, (pendingPrnByBlockId.get(bid) ?? 0) + 1)
-  }
-
-  const pendingSwapBlockIds = (pendingSwapRows ?? []).map(
-    (r: { schedule_block_id: string }) => r.schedule_block_id
-  )
-  const pendingChangeBlockIds = (pendingChangeRows ?? []).map(
-    (r: { schedule_block_id: string }) => r.schedule_block_id
-  )
-
-  const activeCompletedBlockIds = filteredBlocks
-    .filter((b) => b.status === 'active' || b.status === 'completed')
-    .map((b) => b.id)
-  let actualRows: ActualHeadcountRow[] = []
-  if (activeCompletedBlockIds.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const actualQuery = (supabase as any)
-      .from('shift_actual_headcount')
-      .select('*')
-      .in('schedule_block_id', activeCompletedBlockIds)
-    if (from) actualQuery.gte('shift_date', from)
-    if (to) actualQuery.lte('shift_date', to)
-    const { data } = await actualQuery as { data: ActualHeadcountRow[] | null; error: unknown }
-    actualRows = data ?? []
-  }
-
   const blockHealthRows = buildBlockHealthRows({
     blocks: filteredBlocks,
     shifts,
-    actualRows: actualRows.map((r) => ({
-      schedule_block_id: r.schedule_block_id,
-      shift_date: r.shift_date,
-      total_actual: r.total_actual,
-    })),
+    actualRows,
     pendingSwapBlockIds,
     pendingChangeBlockIds,
     pendingPrnByBlockId,
@@ -217,14 +132,10 @@ export default async function OpsPage({ searchParams }: PageProps) {
 
   const kpis = buildOpsKpis({
     shifts,
-    pendingSwaps: pendingSwaps ?? 0,
-    pendingChangeRequests: pendingChangeRequests ?? 0,
+    pendingSwaps: pendingSwapsCount,
+    pendingChangeRequests: pendingChangeCount,
     pendingPrnInterest,
-    actualRows: actualRows.map((r) => ({
-      schedule_block_id: r.schedule_block_id,
-      shift_date: r.shift_date,
-      total_actual: r.total_actual,
-    })),
+    actualRows,
   })
 
   const { data: usersData } = await supabase
@@ -362,7 +273,17 @@ export default async function OpsPage({ searchParams }: PageProps) {
   return (
     <div className="space-y-4">
       <OpsRealtimeRefresh blockIds={blockIds} shiftIds={shifts.map((s) => s.id)} />
-      <h1 className="text-lg font-semibold text-slate-900">Operations Dashboard</h1>
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-lg font-semibold text-slate-900">Operations Dashboard</h1>
+        <ExportKPIButton
+          filters={{
+            shift: searchParams.shift,
+            blockId: searchParams.blockId,
+            from: searchParams.from,
+            to: searchParams.to,
+          }}
+        />
+      </div>
 
       <OpsFilters
         shift={shift}

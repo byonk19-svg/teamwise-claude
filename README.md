@@ -26,6 +26,7 @@ npm test           # unit tests (Vitest)
 npm run build      # production build (includes PWA + custom worker)
 npm run lint       # ESLint
 npm run seed       # seed Supabase dev data (see CLAUDE.md)
+npm run test:e2e   # Playwright (needs .env.local + seed; see below)
 ```
 
 For **PWA / web push** locally, use a production build — the service worker is not enabled the same way under `next dev`:
@@ -52,6 +53,7 @@ Full list and behavior are documented in [**CLAUDE.md**](CLAUDE.md).
 | **7** | Therapist `/today` hub |
 | **8** | In-app notifications, optional push + email, `worker/index.js` for OS notifications |
 | **9** | Manager `/staff` (invite / edit / deactivate), `/settings` (coverage thresholds); migration `007` adds `swap_requests.status = cancelled` |
+| **10** | Schedule print CSS, coverage/KPI/staff CSV exports (`lib/exports/`, server actions) |
 
 **Authoritative detail:** table list, RPCs, migrations **001–007**, auth rules, and gotchas → **CLAUDE.md**.
 
@@ -67,8 +69,14 @@ If UI breaks after changes (cells inert, 404 on `/_next/static/chunks/*`):
 2. Remove `.next`.
 3. `npm run dev` again and hard-refresh the browser.
 
-## Playwright E2E
+## Testing & CI
 
-- Prefer **one** dev server on port 3000 (Playwright `webServer` **or** manual `npm run dev`, not both).
-- Authenticated specs need `.env.local`, `npm run seed`, and `E2E_AUTH=true`.
-- Default config uses **one worker** locally; first compile can take 30s+.
+**What runs in GitHub by default:** on pushes/PRs to `main` or `master`, **`.github/workflows/ci.yml`** runs **`npm run lint`** and **`npm test`**. No Supabase or browser is required; that is enough for day-to-day merges.
+
+**Local E2E (Playwright):**
+
+- Prefer **one** server on port 3000 (Playwright starts **`npm run dev`** for you locally, or run it yourself and Playwright will reuse it).
+- Authenticated specs need a real **`.env.local`**, **`npm run seed`**, and **`E2E_AUTH=true`** (see **CLAUDE.md → Testing**).
+- **`npm run test:e2e`** · **`npm run test:e2e:ui`** for UI mode.
+
+**Optional — E2E in GitHub Actions:** **`.github/workflows/e2e.yml`** is **manual only** (Actions → run workflow). It needs repository secrets and a seeded Supabase project; use it when you want cloud browser tests, not as a prerequisite for contributing. Full checklist → **CLAUDE.md → Testing → Optional: E2E in GitHub Actions**.

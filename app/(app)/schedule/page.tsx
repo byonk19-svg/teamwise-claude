@@ -8,6 +8,7 @@ import { AvailabilityWindowControl } from '@/components/schedule/AvailabilityWin
 import { SubmissionTracker } from '@/components/availability/SubmissionTracker'
 import { ConstraintDiff, type DiffItem } from '@/components/schedule/ConstraintDiff'
 import { BlockStatusActions } from '@/components/schedule/BlockStatusActions'
+import { PrintButton } from '@/components/schedule/PrintButton'
 import { WeekView } from '@/components/schedule/WeekView'
 import { getLeadGapDates } from '@/lib/schedule/lead-assignment'
 import Link from 'next/link'
@@ -17,6 +18,7 @@ type UserRow = Database['public']['Tables']['users']['Row']
 type BlockRow = Database['public']['Tables']['schedule_blocks']['Row']
 type ShiftRow = Database['public']['Tables']['shifts']['Row']
 type SubmissionRow = Database['public']['Tables']['availability_submissions']['Row']
+type AvailabilityEntryRow = Database['public']['Tables']['availability_entries']['Row']
 type OperationalEntryRow = Database['public']['Tables']['operational_entries']['Row']
 
 interface PageProps {
@@ -107,6 +109,33 @@ export default async function SchedulePage({ searchParams }: PageProps) {
   const leadGapDates = getLeadGapDates(shifts)
   const therapists = (therapistsData ?? []) as UserRow[]
 
+  const { data: submissionsForMap } = await supabase
+    .from('availability_submissions')
+    .select('id, user_id')
+    .eq('schedule_block_id', block.id)
+
+  const submissionsLite = (submissionsForMap ?? []) as Pick<SubmissionRow, 'id' | 'user_id'>[]
+  const submissionUserMap = new Map(submissionsLite.map((s) => [s.id, s.user_id]))
+  const submissionIds = Array.from(submissionUserMap.keys())
+  const availabilityMap: Record<string, string> = {}
+  if (submissionIds.length > 0) {
+    const { data: entriesData } = await supabase
+      .from('availability_entries')
+      .select('submission_id, entry_date, entry_type')
+      .in('submission_id', submissionIds)
+
+    const entriesLite = (entriesData ?? []) as Pick<
+      AvailabilityEntryRow,
+      'submission_id' | 'entry_date' | 'entry_type'
+    >[]
+    for (const entry of entriesLite) {
+      const uid = submissionUserMap.get(entry.submission_id)
+      if (uid) {
+        availabilityMap[`${uid}:${entry.entry_date}`] = entry.entry_type
+      }
+    }
+  }
+
   let operationalEntries: OperationalEntryRow[] = []
   if (block.status === 'active') {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -158,7 +187,7 @@ export default async function SchedulePage({ searchParams }: PageProps) {
   return (
     <div className="flex flex-col gap-3">
       {/* Top controls */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
+      <div className="flex items-center justify-between flex-wrap gap-2" data-no-print>
         <BlockPicker
           blocks={allBlocks}
           currentBlockId={block.id}
@@ -173,15 +202,20 @@ export default async function SchedulePage({ searchParams }: PageProps) {
           </Link>
         )}
         <BlockStatusActions block={block} userRole={profile.role as 'manager' | 'therapist'} leadGapDates={leadGapDates} />
+        <PrintButton />
+      </div>
+
+      <div id="print-header">
+        {block.shift_type} schedule — {block.start_date} to {block.end_date}
       </div>
 
       {profile.role === 'therapist' && block.status === 'preliminary' && profile.employment_type === 'full_time' && (
-        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2" data-no-print>
           This schedule is Preliminary. Open any of your cells to request a change.
         </p>
       )}
       {profile.role === 'therapist' && block.status === 'preliminary' && profile.employment_type === 'prn' && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" data-no-print>
           <Link
             href={`/availability/open-shifts?blockId=${block.id}&shift=${activeShift}`}
             className="text-sm px-3 py-1.5 border border-slate-300 rounded-md hover:bg-slate-50"
@@ -191,9 +225,13 @@ export default async function SchedulePage({ searchParams }: PageProps) {
         </div>
       )}
 
-      {diff.length > 0 && <ConstraintDiff diff={diff} />}
+      {diff.length > 0 && (
+        <div data-no-print>
+          <ConstraintDiff diff={diff} />
+        </div>
+      )}
 
-      <div className="hidden md:block">
+      <div className="hidden md:block schedule-print-desktop-grid">
         <ScheduleGrid
           block={block}
           shifts={shifts}
@@ -206,6 +244,7 @@ export default async function SchedulePage({ searchParams }: PageProps) {
           blockId={block.id}
           operationalEntriesByShiftId={operationalEntriesByShiftId}
           blockStart={block.start_date}
+          availabilityMap={availabilityMap}
         />
       </div>
 
@@ -221,7 +260,7 @@ export default async function SchedulePage({ searchParams }: PageProps) {
 
       {/* Manager availability panel */}
       {profile.role === 'manager' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2" data-no-print>
           <AvailabilityWindowControl block={block} />
           <SubmissionTracker therapists={therapists} submissions={submissions} />
         </div>

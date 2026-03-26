@@ -26,7 +26,7 @@ npm run lint         # ESLint
 
 ```
 app/
-  (app)/            # Authenticated routes (layout wraps with Sidebar + TopBar)
+  (app)/            # Authenticated routes (layout wraps with Sidebar + TopBar); Phase 11: /change-requests, /my-schedule (therapist), /fairness (manager)
   (auth)/           # Unauthenticated routes (/login)
   actions/          # Server actions (schedule, swaps, change-requests, notifications, staff, settings, coverage, ops, …)
   page.tsx          # Root redirect — therapist → /today, manager → /schedule
@@ -50,7 +50,7 @@ lib/
   supabase/
     server.ts       # Cookie-based anon client (server components + actions)
     service-role.ts # Service-role client (notifications + staff actions — bypasses RLS)
-  schedule/         # block-status helpers, cell-colors, optimistic updates, swap logic
+  schedule/         # block-status helpers, cell-colors, optimistic updates, swap logic, conflict-detection
   today/            # buildWeekWindow, resolveLeadName, computeUnsignaledCount
   notifications/    # create, push, email, payloads
   settings/         # validate.ts (validateCoverageThresholds)
@@ -67,7 +67,7 @@ supabase/
   migrations/       # SQL migrations 001–007
   seed.ts           # Dev seed script
 tests/
-  unit/             # Vitest unit tests (135 after Phase 11; includes staff-settings + notification-payloads + exports + conflict-detection + fairness)
+  unit/             # Vitest unit tests (136 — includes conflict-detection, fairness, exports, …)
   e2e/              # Playwright specs (require E2E_AUTH=true + real .env.local)
 ```
 
@@ -200,7 +200,7 @@ RESEND_API_KEY                  # from: Resend dashboard → API Keys
 
 ### Unit tests (Vitest)
 
-- **`npm test`** — **135** tests after Phase 11 (includes `staff-settings`, `notification-payloads`, `exports`, `conflict-detection`, `fairness`). Keep them green before commits.
+- **`npm test`** — **136** unit tests (includes `staff-settings`, `notification-payloads`, `exports`, `conflict-detection`, `fairness`). Keep them green before commits.
 - Global setup **`tests/setup.ts`**: small **`HTMLAnchorElement.prototype.click`** shim so CSV download tests do not log jsdom’s “navigation to another Document” warning.
 - Vitest **excludes** `tests/e2e/**` — do not remove that exclusion.
 
@@ -239,7 +239,7 @@ For stricter isolation, point those secrets at a **separate** Supabase project u
 8. **Status recheck hardening (resolved)** — `resolveChangeRequest`, `resolvePrnInterest`, and `resolveSwap` now re-verify the current block status before mutating `shifts.cell_state`.
 9. **Department-scoped RLS hardening (resolved)** — `swap_requests` and `operational_entries` policies are department-scoped via migration `005_phase5_rls_hardening.sql`.
 10. **`schedule_blocks` `.update()` returns `never`** — self-referential Database type issue in generated client. Always use `(supabase as any).from('schedule_blocks').update(...)` for block status mutations. (Same `any`-cast pattern as Manual Table Access — see Architecture Rules.)
-11. **Set spread downlevel iteration** — `[...mySet]` fails with `TS2802` in this tsconfig. Always use `Array.from(mySet)` instead when spreading Sets or Map iterators.
+11. **Set / Map downlevel iteration** — `[...mySet]` fails with `TS2802`; `for...of map.entries()` / `map.values()` can fail the Next typecheck similarly. Use `Array.from(mySet)`, `Array.from(map.entries())`, `Array.from(map.values())` (see `lib/fairness/fetch-therapist-equity.ts`).
 12. **E2E `/ops` drill-down** — On desktop, the sidebar includes a link named “Schedule”; table-scoped locators in `tests/e2e/ops.spec.ts` avoid clicking the nav link (which omits `?blockId=`).
 13. **PRN empty-state pattern** — PRN-only UI sections (e.g. Open Shifts card) must always render for PRN users even when the backing data (preliminary block) is absent. Pass `null` props and show “No open shifts right now” — never conditionally omit the card based on a nullable dependency.
 14. **Today hub / operational display** — `operational_entries` rows use **`entry_type`** (not `code`) for OC/CI/CX/LE; Today and audit UIs read that column.
@@ -253,8 +253,8 @@ For stricter isolation, point those secrets at a **separate** Supabase project u
 22. **`deactivateTherapist` uses two clients** — anon client (`createClient()`) for session auth and role guard only; service-role client for all DB reads and writes (dept guard, swap/PRN cleanup, users update). This is intentional: the cleanup steps mutate rows belonging to other users, which RLS on the anon client would reject.
 23. **`swap_requests.status = 'cancelled'`** — requires migration `007_phase9_swap_cancelled.sql` (extends the DB check constraint). Without it, deactivation fails when pending swaps exist.
 24. **`preliminary_change_requests` column names** — columns are `requester_id` (not `user_id`), `response_note` (not `manager_note`), and status values are `'pending' | 'accepted' | 'rejected'` (not `approved/denied`). Access via `(supabase as any)`.
-25. **Availability conflict detection (Phase 11)** — `lib/schedule/conflict-detection.ts` exports `detectConflict(cellState, availEntryType, blockShiftType)`. `availabilityMap` is built in `schedule/page.tsx` via two-step fetch (submissions → entries), keyed `${userId}:${date}` (colon separator, matching `shiftIndex`). `GridCell` renders a yellow border + ⚠ icon (`availConflict` prop, manager-only). `CellPanel` shows an `AlertDialog` before saving `'working'` on a conflicting cell.
-26. **`/my-schedule` and `/fairness` routes (Phase 11)** — therapist-only and manager-only respectively. `/my-schedule` fetches working shifts + blocks (typed queries) + pending swaps (`(supabase as any)`). `/fairness` uses `fetchEquityRows` (3 separate typed queries joined in memory, pattern from `fetch-block-health.ts`) + pure `pivotEquityRows`.
+25. **Availability map on schedule page** — `availabilityMap` keys are **`${user_id}:${entry_date}`** (ISO date string), values are `availability_entries.entry_type`. Passed into **`ScheduleGrid`** for manager conflict detection when setting a cell to working.
+26. **`detectConflict()`** — `lib/schedule/conflict-detection.ts` classifies off→working against submitted availability vs block `shift_type`; **GridCell** shows manager-only conflict affordance; **CellPanel** confirms before commit.
 
 ---
 
@@ -272,6 +272,6 @@ For stricter isolation, point those secrets at a **separate** Supabase project u
   - [ ] **Production env:** set `NEXT_PUBLIC_VAPID_*`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `SUPABASE_SERVICE_ROLE_KEY`, and `RESEND_API_KEY` on the host if using block-post email.
   - [ ] **Resend:** verify sending domain for `schedule@teamwise.work` (or change `from` in `lib/notifications/email.ts` to match a verified domain).
 - **Phase 9 (Staff Management & Settings):** Complete — manager-only `/staff` (invite via Supabase email, edit profile, soft-deactivate with pending swap cancel + PRN interest decline) and `/settings` (coverage threshold upsert). `lib/settings/validate.ts` + `tests/unit/staff-settings.test.ts` (4 tests). Service-role: `inviteTherapist` / `deactivateTherapist`. Migration `007_phase9_swap_cancelled.sql` for `cancelled` swap status. Spec: `docs/superpowers/specs/2026-03-24-phase9-staff-settings-design.md`. Plan: `docs/superpowers/plans/2026-03-25-phase9-staff-settings.md`.
-- **Phase 10 (Richer Exports):** Complete — browser print PDF for schedule grid (`@media print` + `PrintButton`), Coverage CSV (`exportCoverageCSV`), KPI CSV (`exportKPICSV` via shared `fetch-block-health.ts` helper), Staff Roster CSV (`exportStaffCSV`). Pure CSV builders in `lib/exports/`. 4 Vitest tests in `tests/unit/exports.test.ts` (**118** total). No new npm dependencies.
-- **Phase 11 (Therapist UX Completion & Schedule Intelligence):** Planned — fix broken sidebar nav (`/open-shifts` → `/availability/open-shifts`; add My Schedule + Fairness items), therapist `/change-requests` page (read-only view of request status + manager response), therapist `/my-schedule` page (upcoming/past working shifts across blocks with swap badge), `detectConflict()` pure helper + 11 unit tests, availability conflict indicator on `GridCell` (yellow border + ⚠, manager-only), `AlertDialog` confirm-before-save in `CellPanel` when scheduling a `cannot_work` date, manager `/fairness` page (`fetchEquityRows` + `pivotEquityRows` with 6 unit tests, day/night counts per block). No new migrations, no new npm deps. **135 unit tests** total. Spec: `docs/superpowers/specs/2026-03-25-phase11-therapist-ux-schedule-intelligence-design.md`. Plan: `docs/superpowers/plans/2026-03-25-phase11-therapist-ux-schedule-intelligence.md`.
+- **Phase 10 (Richer Exports):** Complete — browser print PDF for schedule grid (`@media print` + `PrintButton`), Coverage CSV (`exportCoverageCSV`), KPI CSV (`exportKPICSV` via shared `fetch-block-health.ts` helper), Staff Roster CSV (`exportStaffCSV`). Pure CSV builders in `lib/exports/`. 4 Vitest tests in `tests/unit/exports.test.ts`. No new npm dependencies.
+- **Phase 11 (Therapist UX Completion & Schedule Intelligence):** Complete — Sidebar: `/availability/open-shifts`, **My Schedule**, **Fairness**; therapist **`/change-requests`** and **`/my-schedule`**; manager **`/fairness`** (`lib/fairness/fetch-therapist-equity.ts`: `fetchEquityRows`, `pivotEquityRows`); **`lib/schedule/conflict-detection.ts`** + schedule grid availability map + **`GridCell`** / **`CellPanel`** conflict confirm for managers. Vitest: `tests/unit/conflict-detection.test.ts`, `tests/unit/fairness.test.ts`. No new migrations or npm deps. Spec: `docs/superpowers/specs/2026-03-25-phase11-therapist-ux-schedule-intelligence-design.md`. Plan: `docs/superpowers/plans/2026-03-25-phase11-therapist-ux-schedule-intelligence.md`.
 - **Phase 12+:** Candidates — CI-hardened E2E with isolated DB.

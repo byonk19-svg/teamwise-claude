@@ -14,16 +14,18 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/today',           label: 'Today',            roles: ['therapist'] },
-  { href: '/schedule',        label: 'Schedule',         roles: ['manager', 'therapist'] },
-  { href: '/availability',    label: 'Availability',     roles: ['manager', 'therapist'] },
-  { href: '/swaps',           label: 'Swaps',            roles: ['manager', 'therapist'] },
-  { href: '/coverage',        label: 'Coverage',         roles: ['manager'] },
-  { href: '/ops',             label: 'Ops',              roles: ['manager'] },
-  { href: '/staff',           label: 'Staff',            roles: ['manager'] },
-  { href: '/settings',        label: 'Settings',         roles: ['manager'] },
-  { href: '/open-shifts',     label: 'Open Shifts',      roles: ['therapist'] },
-  { href: '/change-requests', label: 'Change Requests',  roles: ['therapist'] },
+  { href: '/today',                      label: 'Today',           roles: ['therapist'] },
+  { href: '/my-schedule',                label: 'My Schedule',     roles: ['therapist'] },
+  { href: '/schedule',                   label: 'Schedule',          roles: ['manager', 'therapist'] },
+  { href: '/availability',              label: 'Availability',      roles: ['manager', 'therapist'] },
+  { href: '/swaps',                     label: 'Swaps',             roles: ['manager', 'therapist'] },
+  { href: '/coverage',                  label: 'Coverage',          roles: ['manager'] },
+  { href: '/ops',                       label: 'Ops',               roles: ['manager'] },
+  { href: '/fairness',                  label: 'Fairness',          roles: ['manager'] },
+  { href: '/staff',                     label: 'Staff',             roles: ['manager'] },
+  { href: '/settings',                  label: 'Settings',          roles: ['manager'] },
+  { href: '/availability/open-shifts',   label: 'Open Shifts',       roles: ['therapist'] },
+  { href: '/change-requests',            label: 'Change Requests',   roles: ['therapist'] },
 ]
 
 interface Props {

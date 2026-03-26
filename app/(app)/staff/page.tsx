@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { getServerUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { StaffTable } from '@/components/staff/StaffTable'
+import { ExportStaffButton } from '@/components/staff/ExportStaffButton'
 import type { Database } from '@/lib/types/database.types'
 
 type UserRow = Database['public']['Tables']['users']['Row']
@@ -43,7 +44,10 @@ export default async function StaffPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6">
-      <h1 className="text-xl font-bold text-slate-900 mb-6">Staff</h1>
+      <div className="flex items-center justify-between gap-2 mb-6">
+        <h1 className="text-xl font-bold text-slate-900">Staff</h1>
+        <ExportStaffButton />
+      </div>
       <StaffTable therapists={therapists ?? []} />
     </div>
   )

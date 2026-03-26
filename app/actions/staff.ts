@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { getServerUser } from '@/lib/auth'
+import { buildStaffCSV } from '@/lib/exports/build-staff-csv'
 import type { Database } from '@/lib/types/database.types'
 
 type EmploymentType = Database['public']['Tables']['users']['Row']['employment_type']
@@ -177,4 +178,37 @@ export async function deactivateTherapist(userId: string): Promise<{ error?: str
 
   revalidatePath('/staff')
   return {}
+}
+
+export async function exportStaffCSV(): Promise<{ data: string } | { error: string }> {
+  const user = await getServerUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const supabase = createClient()
+  const { data: profile } = await supabase
+    .from('users')
+    .select('role, department_id')
+    .eq('id', user.id)
+    .single() as { data: { role: string; department_id: string | null } | null; error: unknown }
+  if (!profile || profile.role !== 'manager') return { error: 'Manager access required' }
+  if (!profile.department_id) return { error: 'No department assigned' }
+
+  const { data: usersData } = await supabase
+    .from('users')
+    .select('full_name, email, role, employment_type, is_lead_qualified, is_active, created_at')
+    .eq('department_id', profile.department_id)
+    .order('full_name') as {
+    data: Array<{
+      full_name: string | null
+      email: string
+      role: string
+      employment_type: string | null
+      is_lead_qualified: boolean
+      is_active: boolean
+      created_at: string
+    }> | null
+    error: unknown
+  }
+
+  return { data: buildStaffCSV(usersData ?? []) }
 }

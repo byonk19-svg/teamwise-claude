@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { getServerUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { CoverageHeatmap } from '@/components/coverage/CoverageHeatmap'
+import { ExportCoverageButton } from '@/components/coverage/ExportCoverageButton'
 import { AlertBanner } from '@/components/coverage/AlertBanner'
 import Link from 'next/link'
 import type { Database } from '@/lib/types/database.types'
@@ -109,7 +110,8 @@ export default async function CoveragePage({
           <span>Lead gaps: <strong className={leadGapDates.size > 0 ? 'text-pink-600' : 'text-green-600'}>{leadGapDates.size}</strong></span>
           <span>Pending swaps: <strong className={pendingSwapCount > 0 ? 'text-amber-600' : 'text-slate-600'}>{pendingSwapCount ?? 0}</strong></span>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <ExportCoverageButton blockId={block.id} />
           <Link
             href={`/coverage?blockId=${block.id}&shift=day`}
             className={`px-3 py-1 text-sm rounded-md border ${activeShift === 'day' ? 'bg-slate-900 text-white border-slate-900' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}

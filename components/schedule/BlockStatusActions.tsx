@@ -55,7 +55,7 @@ export function BlockStatusActions({ block, userRole, leadGapDates }: Props) {
   }
 
   return (
-    <div className="flex items-center gap-3 flex-wrap">
+    <div className="flex items-center gap-3 flex-wrap" data-no-print>
       {/* Status badge */}
       <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border ${STATUS_COLORS[block.status]}`}>
         {STATUS_LABELS[block.status]}

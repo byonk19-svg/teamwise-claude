@@ -74,7 +74,7 @@ export function WeekView({
   }
 
   return (
-    <div className="md:hidden overflow-x-auto">
+    <div className="schedule-week-view-mobile md:hidden overflow-x-auto">
       <div className="flex items-center justify-between mb-2 px-1">
         <button
           type="button"

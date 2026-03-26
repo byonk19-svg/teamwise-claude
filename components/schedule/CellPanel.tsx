@@ -2,6 +2,14 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
 import { updateCellState } from '@/app/actions/schedule'
@@ -13,6 +21,7 @@ import { submitChangeRequest } from '@/app/actions/change-requests'
 import { submitSwap } from '@/app/actions/swap-requests'
 import { isSwapAllowed } from '@/lib/schedule/swap-requests'
 import { OperationalCodeEntry } from './OperationalCodeEntry'
+import type { ConflictType } from '@/lib/schedule/conflict-detection'
 
 type Shift = Database['public']['Tables']['shifts']['Row']
 type UserRow = Database['public']['Tables']['users']['Row']
@@ -48,11 +57,34 @@ interface Props {
   operationalEntries: OperationalEntry[]
   blockStart: string
   isUserLead: boolean
+  conflictType?: ConflictType
 }
 
-export function CellPanel({ open, onClose, shift, date, user, userRole, onCellStateUpdate, blockStatus, blockId, currentUserId, leadCandidates, currentLeadUserId, onLeadUpdate, workingShiftsByUser, allTherapists, operationalEntries, blockStart, isUserLead }: Props) {
+export function CellPanel({
+  open,
+  onClose,
+  shift,
+  date,
+  user,
+  userRole,
+  onCellStateUpdate,
+  blockStatus,
+  blockId,
+  currentUserId,
+  leadCandidates,
+  currentLeadUserId,
+  onLeadUpdate,
+  workingShiftsByUser,
+  allTherapists,
+  operationalEntries,
+  blockStart,
+  isUserLead,
+  conflictType = null,
+}: Props) {
   const [isPending, startTransition] = useTransition()
   const [editError, setEditError] = useState<string | null>(null)
+  const [showConflictDialog, setShowConflictDialog] = useState(false)
+  const [pendingState, setPendingState] = useState<CellState | null>(null)
   const [showChangeReqForm, setShowChangeReqForm] = useState(false)
   const [reqType, setReqType] = useState<ChangeReqType>('move_shift')
   const [reqNote, setReqNote] = useState('')
@@ -88,6 +120,16 @@ export function CellPanel({ open, onClose, shift, date, user, userRole, onCellSt
 
   function handleStateChange(newState: CellState) {
     if (!shift) return
+    if (newState === 'working' && conflictType) {
+      setPendingState(newState)
+      setShowConflictDialog(true)
+      return
+    }
+    commitStateChange(newState)
+  }
+
+  function commitStateChange(newState: CellState) {
+    if (!shift) return
     setEditError(null)
     const revertFn = onCellStateUpdate(shift.id, newState, shift)
     startTransition(async () => {
@@ -100,8 +142,9 @@ export function CellPanel({ open, onClose, shift, date, user, userRole, onCellSt
   }
 
   return (
+    <>
     <Sheet open={open} onOpenChange={v => { if (!v) onClose() }}>
-      <SheetContent side="right" className="w-80 sm:w-96" aria-label="Cell details">
+      <SheetContent side="right" className="w-80 sm:w-96" data-no-print aria-label="Cell details">
         <SheetHeader>
           <SheetTitle className="text-left">{user.full_name}</SheetTitle>
           <p className="text-sm text-slate-500">{formattedDate}</p>
@@ -371,5 +414,47 @@ export function CellPanel({ open, onClose, shift, date, user, userRole, onCellSt
         )}
       </SheetContent>
     </Sheet>
+
+    <Dialog
+      open={showConflictDialog}
+      onOpenChange={(next) => {
+        setShowConflictDialog(next)
+        if (!next) setPendingState(null)
+      }}
+    >
+      <DialogContent showCloseButton={false} className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Availability conflict</DialogTitle>
+          <DialogDescription>
+            This therapist marked{' '}
+            {conflictType === 'cannot_work' ? 'cannot work' : 'a different shift type'} on this
+            date. Schedule them anyway?
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex justify-end gap-2 mt-4">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setPendingState(null)
+              setShowConflictDialog(false)
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={() => {
+              if (pendingState) commitStateChange(pendingState)
+              setPendingState(null)
+              setShowConflictDialog(false)
+            }}
+          >
+            Schedule anyway
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }

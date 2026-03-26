@@ -1,0 +1,55 @@
+@media print {
+  @page {
+    size: landscape;
+    margin: 10mm;
+  }
+
+  #app-sidebar,
+  #app-topbar {
+    display: none !important;
+  }
+
+  [data-no-print] {
+    display: none !important;
+  }
+
+  body,
+  .flex.h-screen.overflow-hidden {
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  main {
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  .grid-row {
+    display: grid;
+    grid-template-columns: 120px repeat(42, minmax(16px, 1fr)) !important;
+  }
+
+  .schedule-print-desktop-grid {
+    display: block !important;
+  }
+
+  .schedule-week-view-mobile {
+    display: none !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  #print-header {
+    display: block !important;
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+}
+
+#print-header {
+  display: none;
+}

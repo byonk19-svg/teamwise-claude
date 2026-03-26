@@ -9,6 +9,7 @@ import { applyOptimisticUpdate } from '@/lib/schedule/optimistic'
 import { BulkLeadModal } from './BulkLeadModal'
 import { getLeadGapDates } from '@/lib/schedule/lead-assignment'
 import { canEditCell } from '@/lib/schedule/block-status'
+import { detectConflict, type ConflictType } from '@/lib/schedule/conflict-detection'
 import type { Database } from '@/lib/types/database.types'
 
 type Shift = Database['public']['Tables']['shifts']['Row']
@@ -27,6 +28,7 @@ interface Props {
   currentUserId: string
   operationalEntriesByShiftId: Map<string, OperationalEntry[]>
   blockStart: string
+  availabilityMap?: Record<string, string>
 }
 
 function buildDates(startDate: string): string[] {
@@ -38,7 +40,20 @@ function buildWeeks(dates: string[]): string[][] {
   return Array.from({ length: 6 }, (_, i) => dates.slice(i * 7, i * 7 + 7))
 }
 
-export function ScheduleGrid({ block, shifts: initialShifts, therapists, defaultShiftType, userRole, conflictedCells, blockStatus, blockId, currentUserId, operationalEntriesByShiftId, blockStart }: Props) {
+export function ScheduleGrid({
+  block,
+  shifts: initialShifts,
+  therapists,
+  defaultShiftType,
+  userRole,
+  conflictedCells,
+  blockStatus,
+  blockId,
+  currentUserId,
+  operationalEntriesByShiftId,
+  blockStart,
+  availabilityMap,
+}: Props) {
   const [activeShift, setActiveShift] = useState<'day' | 'night'>(defaultShiftType)
   const [shifts, setShifts] = useState<Shift[]>(initialShifts)
   const [panelShift, setPanelShift] = useState<Shift | undefined>()
@@ -48,6 +63,7 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
   const [panelLeadCandidates, setPanelLeadCandidates] = useState<UserRow[]>([])
   const [panelCurrentLeadUserId, setPanelCurrentLeadUserId] = useState<string | null>(null)
   const [showBulkModal, setShowBulkModal] = useState(false)
+  const [panelConflictType, setPanelConflictType] = useState<ConflictType>(null)
 
   const dates = useMemo(() => buildDates(block.start_date), [block.start_date])
   const weeks = useMemo(() => buildWeeks(dates), [dates])
@@ -149,6 +165,9 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
     )
     setPanelLeadCandidates(candidates)
     setPanelCurrentLeadUserId(currentLeadByDate.get(date) ?? null)
+    const availEntry = availabilityMap?.[`${user.id}:${date}`]
+    // Conflict if scheduling as *working* would violate availability (confirms off→working too).
+    setPanelConflictType(detectConflict('working', availEntry, block.shift_type))
   }
 
   const headcounts = useMemo(() => {
@@ -272,6 +291,15 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
                   onClick={(shift, d) => handleCellClick(shift, d, therapist)}
                   isConflicted={conflictedCells?.has(`${therapist.id}:${date}`) ?? false}
                   dateHasLead={leadDates.has(date)}
+                  availConflict={
+                    userRole === 'manager'
+                      ? detectConflict(
+                          getShift(therapist.id, date)?.cell_state ?? 'off',
+                          availabilityMap?.[`${therapist.id}:${date}`],
+                          block.shift_type
+                        )
+                      : null
+                  }
                 />
               ))}
             </div>
@@ -312,6 +340,15 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
                   onClick={(shift, d) => handleCellClick(shift, d, therapist)}
                   isConflicted={conflictedCells?.has(`${therapist.id}:${date}`) ?? false}
                   dateHasLead={leadDates.has(date)}
+                  availConflict={
+                    userRole === 'manager'
+                      ? detectConflict(
+                          getShift(therapist.id, date)?.cell_state ?? 'off',
+                          availabilityMap?.[`${therapist.id}:${date}`],
+                          block.shift_type
+                        )
+                      : null
+                  }
                 />
               ))}
             </div>
@@ -352,7 +389,10 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
       {/* Cell panel */}
       <CellPanel
         open={panelOpen}
-        onClose={() => setPanelOpen(false)}
+        onClose={() => {
+          setPanelOpen(false)
+          setPanelConflictType(null)
+        }}
         shift={panelShift}
         date={panelDate ?? ''}
         user={panelUser}
@@ -369,6 +409,7 @@ export function ScheduleGrid({ block, shifts: initialShifts, therapists, default
         operationalEntries={operationalEntriesByShiftId.get(panelShift?.id ?? '') ?? []}
         blockStart={blockStart}
         isUserLead={isUserLead}
+        conflictType={panelConflictType}
       />
 
       {showBulkModal && (
