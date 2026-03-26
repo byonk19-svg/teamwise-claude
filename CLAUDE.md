@@ -28,7 +28,7 @@ npm run lint         # ESLint
 app/
   (app)/            # Authenticated routes (layout wraps with Sidebar + TopBar)
   (auth)/           # Unauthenticated routes (/login)
-  actions/          # Server actions (schedule, swaps, change-requests, notifications, staff, settings, …)
+  actions/          # Server actions (schedule, swaps, change-requests, notifications, staff, settings, coverage, ops, …)
   page.tsx          # Root redirect — therapist → /today, manager → /schedule
 
 components/
@@ -54,6 +54,8 @@ lib/
   today/            # buildWeekWindow, resolveLeadName, computeUnsignaledCount
   notifications/    # create, push, email, payloads
   settings/         # validate.ts (validateCoverageThresholds)
+  exports/          # Pure CSV builder helpers (build-coverage-csv, build-kpi-csv, build-staff-csv, download-csv)
+  ops/              # KPI helpers, block-health, fetch-block-health, types (OpsFilterParams)
   ops/              # KPI helpers
   server/           # deferred-work.ts (runAfterResponse shim)
   types/
@@ -65,7 +67,7 @@ supabase/
   migrations/       # SQL migrations 001–007
   seed.ts           # Dev seed script
 tests/
-  unit/             # Vitest unit tests (114; includes staff-settings + notification-payloads)
+  unit/             # Vitest unit tests (118; includes staff-settings + notification-payloads + exports)
   e2e/              # Playwright specs (require E2E_AUTH=true + real .env.local)
 ```
 
@@ -192,7 +194,7 @@ RESEND_API_KEY                  # from: Resend dashboard → API Keys
 
 ## Testing
 
-- **Unit tests:** Vitest — `npm test`. Keep all tests passing before any commit. **114** unit tests (includes `staff-settings` + `notification-payloads`).
+- **Unit tests:** Vitest — `npm test`. Keep all tests passing before any commit. **118** unit tests (includes `staff-settings` + `notification-payloads` + `exports`).
 - **E2E tests:** Playwright — requires real `.env.local` credentials and `E2E_AUTH=true` for authenticated specs. Use `loginAsManager` from `tests/e2e/helpers/auth.ts` (waits up to 60s for `/schedule`; throws with login alert text or env hint on failure). After login, middleware sends users to `/`; `app/page.tsx` then redirects **managers → `/schedule`**, **therapists → `/today`**. `loginAsManager` remains correct for manager flows. `tests/e2e/phase5-operational.spec.ts` runs **serial** within the file so revert/coverage/week tests do not race the same DB. `playwright.config.ts` uses extended timeouts and **one worker** locally so `next dev` is not overloaded; avoid running two servers on port 3000.
 - Vitest is configured to exclude `tests/e2e/**` — do not remove this exclusion.
 
@@ -240,4 +242,5 @@ RESEND_API_KEY                  # from: Resend dashboard → API Keys
   - [ ] **Production env:** set `NEXT_PUBLIC_VAPID_*`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `SUPABASE_SERVICE_ROLE_KEY`, and `RESEND_API_KEY` on the host if using block-post email.
   - [ ] **Resend:** verify sending domain for `schedule@teamwise.work` (or change `from` in `lib/notifications/email.ts` to match a verified domain).
 - **Phase 9 (Staff Management & Settings):** Complete — manager-only `/staff` (invite via Supabase email, edit profile, soft-deactivate with pending swap cancel + PRN interest decline) and `/settings` (coverage threshold upsert). `lib/settings/validate.ts` + `tests/unit/staff-settings.test.ts` (4 tests). Service-role: `inviteTherapist` / `deactivateTherapist`. Migration `007_phase9_swap_cancelled.sql` for `cancelled` swap status. Spec: `docs/superpowers/specs/2026-03-24-phase9-staff-settings-design.md`. Plan: `docs/superpowers/plans/2026-03-25-phase9-staff-settings.md`.
-- **Phase 10+:** Candidates — richer exports, CI-hardened E2E with isolated DB.
+- **Phase 10 (Richer Exports):** Planned — browser print PDF for schedule grid (`@media print` + `PrintButton`), Coverage CSV (`exportCoverageCSV` in `app/actions/coverage.ts`), KPI CSV (`exportKPICSV` via `lib/ops/fetch-block-health.ts` shared helper), Staff Roster CSV (`exportStaffCSV` added to `app/actions/staff.ts`). Pure CSV builders in `lib/exports/`. 4 new Vitest tests (`tests/unit/exports.test.ts`). No new npm dependencies. Spec: `docs/superpowers/specs/2026-03-25-phase10-richer-exports-design.md`. Plan: `docs/superpowers/plans/2026-03-25-phase10-richer-exports.md`.
+- **Phase 11+:** Candidates — CI-hardened E2E with isolated DB.
