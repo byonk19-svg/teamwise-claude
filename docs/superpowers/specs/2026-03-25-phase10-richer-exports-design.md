@@ -63,7 +63,7 @@ Phase 10 adds export capabilities to Teamwise: a printable PDF of the 6-week sch
 **Query:** Three queries combined:
 1. `shift_planned_headcount` view filtered by `blockId` — planned headcount per date/shift
 2. `shift_actual_headcount` view filtered by `blockId` — actual headcount per date/shift. Note: actual headcount only exists for blocks with `status = 'active'` or `'completed'`; rows for other block statuses will have no actuals.
-3. `(supabase as any).from('coverage_thresholds')` filtered by the manager's `department_id` — returns one row per `shift_type` with `minimum_staff` (manual-access table, Phase 9)
+3. `(supabase as any).from('coverage_thresholds')` filtered by the manager's `department_id` AND the block's `shift_type` — returns a single row with `minimum_staff` (manual-access table, Phase 9). The block's `shift_type` must be fetched first (query `schedule_blocks` by `blockId`) and used as the second filter so the correct threshold row is selected.
 
 **CSV columns:**
 ```
@@ -151,7 +151,7 @@ full_name, email, role, employment_type, is_lead_qualified, is_active, created_a
 ## Shared Patterns
 
 ### CSV Download Helper
-A small utility `lib/exports/download-csv.ts` exports `downloadCSV(filename: string, csvData: string)` — creates a `Blob`, calls `URL.createObjectURL`, clicks a hidden anchor, and revokes the URL. All three CSV export buttons use this helper.
+A small utility `lib/exports/download-csv.ts` exports `downloadCSV(filename: string, csvData: string)` — creates a `Blob`, calls `URL.createObjectURL`, clicks a hidden anchor, then revokes the URL via `setTimeout(() => URL.revokeObjectURL(url), 0)` to guarantee cleanup even if the click throws. All three CSV export buttons use this helper.
 
 ### Error Handling
 All CSV server actions return `{ data: string } | { error: string }`. Client components show a destructive toast on error using the existing toast pattern (same as swap/change-request flows).
@@ -192,6 +192,7 @@ All CSV server actions return `{ data: string } | { error: string }`. Client com
 | `lib/exports/download-csv.ts` | Shared Blob download helper (new) |
 | `lib/ops/types.ts` | `OpsFilterParams` interface shared by ops page + export action (new) |
 | `lib/ops/fetch-block-health.ts` | Shared Supabase fetch helper for ops page + KPI export action (new) |
+| `app/(app)/ops/page.tsx` | Refactor to use `fetch-block-health.ts` instead of inline queries (existing file, modified) |
 
 ---
 
