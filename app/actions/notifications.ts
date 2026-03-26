@@ -67,15 +67,30 @@ export async function markAllRead(): Promise<void> {
     .is('read_at', null)
 }
 
+export type SubscribeToPushResult = { ok: true } | { ok: false; error: string }
+
+/** Persists the browser push subscription for the current user (service-role upsert). */
 export async function subscribeToPush(subscription: {
   endpoint: string
   keys: { p256dh: string; auth: string }
-}): Promise<void> {
+}): Promise<SubscribeToPushResult> {
   const user = await getServerUser()
-  if (!user) return
-  const supabase = createServiceRoleClient()
+  if (!user) {
+    console.warn('[subscribeToPush] skipped — no server session (cookie may be missing for this request)')
+    return { ok: false, error: 'Not signed in' }
+  }
+
+  let supabase
+  try {
+    supabase = createServiceRoleClient()
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Missing service role configuration'
+    console.error('[subscribeToPush] service role client failed', e)
+    return { ok: false, error: msg }
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from('push_subscriptions').upsert(
+  const { error } = await (supabase as any).from('push_subscriptions').upsert(
     {
       user_id: user.id,
       endpoint: subscription.endpoint,
@@ -84,4 +99,16 @@ export async function subscribeToPush(subscription: {
     },
     { onConflict: 'endpoint' }
   )
+
+  if (error) {
+    console.error('[subscribeToPush] upsert failed', {
+      userId: user.id,
+      endpoint: subscription.endpoint.slice(0, 80),
+      error,
+    })
+    return { ok: false, error: error.message ?? String(error) }
+  }
+
+  console.info('[subscribeToPush] saved', { userId: user.id })
+  return { ok: true }
 }

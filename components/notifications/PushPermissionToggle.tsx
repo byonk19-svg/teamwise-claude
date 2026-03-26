@@ -14,21 +14,10 @@ function urlBase64ToUint8Array(base64Url: string): Uint8Array {
 
 export function PushPermissionToggle() {
   const [status, setStatus] = useState<'default' | 'granted' | 'denied' | 'unsupported'>('default')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
-      setStatus('unsupported')
-    } else {
-      setStatus(Notification.permission as 'default' | 'granted' | 'denied')
-    }
-  }, [])
-
-  async function handleEnable() {
-    const permission = await Notification.requestPermission()
-    setStatus(permission)
-    if (permission !== 'granted') return
-
+  async function ensureSubscription() {
     const vapid = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
     if (!vapid) {
       console.warn('[PushPermissionToggle] NEXT_PUBLIC_VAPID_PUBLIC_KEY missing')
@@ -49,12 +38,52 @@ export function PushPermissionToggle() {
     const p256dh = json.keys?.p256dh
     const auth = json.keys?.auth
     const endpoint = json.endpoint
-    if (!endpoint || !p256dh || !auth) return
+    if (!endpoint || !p256dh || !auth) {
+      console.warn('[PushPermissionToggle] subscription JSON missing keys/endpoint')
+      setSaveError('Could not read push keys from browser')
+      return
+    }
 
-    await subscribeToPush({
-      endpoint,
-      keys: { p256dh, auth },
-    })
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const result = await subscribeToPush({
+        endpoint,
+        keys: { p256dh, auth },
+      })
+      if (!result.ok) {
+        setSaveError(result.error)
+        console.error('[PushPermissionToggle] subscribeToPush failed', result.error)
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Unknown error'
+      setSaveError(msg)
+      console.error('[PushPermissionToggle] subscribeToPush threw', e)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+      setStatus('unsupported')
+    } else {
+      const permission = Notification.permission as 'default' | 'granted' | 'denied'
+      setStatus(permission)
+      if (permission === 'granted') {
+        // Permission can be granted from a previous session; make sure subscription exists in DB.
+        void ensureSubscription()
+      }
+    }
+  }, [])
+
+  async function handleEnable() {
+    const permission = await Notification.requestPermission()
+    setStatus(permission)
+    if (permission !== 'granted') return
+
+    await ensureSubscription()
   }
 
   if (status === 'unsupported') return null
@@ -62,7 +91,18 @@ export function PushPermissionToggle() {
     return <p className="text-xs text-slate-400">Push notifications blocked in browser settings</p>
   }
   if (status === 'granted') {
-    return <p className="text-xs text-green-600">Push notifications enabled</p>
+    return (
+      <div className="space-y-1">
+        <p className="text-xs text-green-600">
+          {saving ? 'Finishing push setup…' : 'Push notifications enabled'}
+        </p>
+        {saveError && (
+          <p className="text-xs text-red-600" role="alert">
+            Could not save subscription: {saveError}
+          </p>
+        )}
+      </div>
+    )
   }
 
   return (

@@ -55,6 +55,7 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|icons).*)',
+    // Exclude PWA / static assets so service worker importScripts are not blocked by auth
+    '/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|worker-|workbox-|swe-worker-|fallback-|icons).*)',
   ],
 }
