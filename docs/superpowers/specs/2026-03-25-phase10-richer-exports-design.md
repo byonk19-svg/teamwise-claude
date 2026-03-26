@@ -37,7 +37,8 @@ Phase 10 adds export capabilities to Teamwise: a printable PDF of the 6-week sch
 **Approach:** Browser print dialog with `@media print` stylesheet. Clicking "Print Schedule" calls `window.print()`. The OS print dialog allows saving as PDF.
 
 **New files:**
-- `app/(app)/schedule/print.css` — print-specific styles (imported in schedule layout)
+- `app/(app)/schedule/print.css` — print-specific styles (new file)
+- `app/(app)/schedule/layout.tsx` — new pass-through layout that exists solely to import `print.css`, scoping print styles to the schedule route only. Implementation: `export default function ScheduleLayout({ children }: { children: React.ReactNode }) { return <>{children}</> }`. Does not duplicate the `<Sidebar>` / `<TopBar>` shell — those come from the parent `app/(app)/layout.tsx`.
 - `components/schedule/PrintButton.tsx` — small `'use client'` component wrapping `window.print()`
 
 **Print CSS behavior:**
@@ -55,16 +56,25 @@ Phase 10 adds export capabilities to Teamwise: a printable PDF of the 6-week sch
 
 **Location:** `/coverage` page — "Export CSV" button in the page header (manager-only, page is already manager-gated)
 
-**Server action:** `exportCoverageCSV(blockId: string)` in `app/actions/coverage.ts`
+**Server action:** `exportCoverageCSV(blockId: string)` in `app/actions/coverage.ts` (new file — create with `'use server'` at top)
 
-**Query:** Joins `shift_planned_headcount` and `shift_actual_headcount` views, filtered by `blockId`
+**Auth/role guard:** Call `getServerUser()`, then query `public.users` for `role` and `department_id`. Return `{ error: 'Manager access required' }` if role is not `manager`. (Same pattern as `app/actions/staff.ts`.)
+
+**Query:** Three queries combined:
+1. `shift_planned_headcount` view filtered by `blockId` — planned headcount per date/shift
+2. `shift_actual_headcount` view filtered by `blockId` — actual headcount per date/shift. Note: actual headcount only exists for blocks with `status = 'active'` or `'completed'`; rows for other block statuses will have no actuals.
+3. `(supabase as any).from('coverage_thresholds')` filtered by the manager's `department_id` — returns one row per `shift_type` with `minimum_staff` (manual-access table, Phase 9)
 
 **CSV columns:**
 ```
 date, shift_type, planned_headcount, actual_headcount, threshold, status
 ```
 
-Where `status` is `ok | warning | critical` derived by comparing `actual_headcount` against `threshold` (same logic as `CoverageHeatmap`).
+Where `threshold` is `coverage_thresholds.minimum_staff` for the matching `shift_type`, and `status` is:
+- `n/a` if `actual_headcount` is not available (block is not active/completed)
+- `critical` if `actual_headcount < threshold`
+- `warning` if `actual_headcount === threshold`
+- `ok` if `actual_headcount > threshold`
 
 **Return type:** `{ data: string } | { error: string }`
 
@@ -78,16 +88,29 @@ Where `status` is `ok | warning | critical` derived by comparing `actual_headcou
 
 **Location:** `/ops` page — "Export CSV" button in the page header (manager-only)
 
-**Server action:** `exportKPICSV(filters: OpsFilters)` in `app/actions/ops.ts`
+**Server action:** `exportKPICSV(filters: OpsFilterParams)` in `app/actions/ops.ts`
 
-**Data source:** Reuses existing KPI helper functions in `lib/ops/` — no new Supabase queries
+**Shared type:** Declare `OpsFilterParams` in a new file `lib/ops/types.ts`:
+```typescript
+export interface OpsFilterParams {
+  shift?: string
+  blockId?: string
+  from?: string
+  to?: string
+}
+```
+Import this type in both `app/actions/ops.ts` and the ops page component.
 
-**CSV columns:**
+**Data source:** Reuses `buildBlockHealthRows` from `lib/ops/block-health.ts` — no new Supabase queries. The function returns `BlockHealthRow[]` with camelCase fields; convert to snake_case CSV headers on output.
+
+**CSV columns** (mapped from `BlockHealthRow` camelCase fields):
 ```
-block_name, shift_type, date_range_start, date_range_end, avg_coverage_pct,
-total_swaps, resolved_swaps, pending_swaps,
-total_change_requests, resolved_change_requests
+block_id, shift_type, start_date, end_date, status,
+lead_gap_dates, pending_swaps, pending_change_requests,
+pending_prn_interest, low_coverage_dates, risk_score
 ```
+
+Note: no `block_name` column — `BlockHealthRow` only exposes `blockId`. Use `block_id` directly.
 
 One row per block (scoped by the same filters already applied on the ops dashboard).
 
@@ -147,11 +170,11 @@ All CSV server actions return `{ data: string } | { error: string }`. Client com
 
 ## Server Actions Summary
 
-| Action | File | Role |
-|--------|------|------|
-| `exportCoverageCSV(blockId)` | `app/actions/coverage.ts` | Manager |
-| `exportKPICSV(filters)` | `app/actions/ops.ts` | Manager |
-| `exportStaffCSV()` | `app/actions/staff.ts` | Manager |
+| Action | File | Notes |
+|--------|------|-------|
+| `exportCoverageCSV(blockId)` | `app/actions/coverage.ts` (new file) | Manager-only |
+| `exportKPICSV(filters)` | `app/actions/ops.ts` | Manager-only; add to existing file |
+| `exportStaffCSV()` | `app/actions/staff.ts` | Manager-only; add to existing file |
 
 ---
 
@@ -159,8 +182,10 @@ All CSV server actions return `{ data: string } | { error: string }`. Client com
 
 | File | Purpose |
 |------|---------|
-| `app/(app)/schedule/print.css` | `@media print` styles for schedule grid |
-| `lib/exports/download-csv.ts` | Shared Blob download helper |
+| `app/(app)/schedule/print.css` | `@media print` styles for schedule grid (new) |
+| `app/(app)/schedule/layout.tsx` | Pass-through layout to scope print CSS (new) |
+| `lib/exports/download-csv.ts` | Shared Blob download helper (new) |
+| `lib/ops/types.ts` | `OpsFilterParams` interface shared by ops page + export action (new) |
 
 ---
 
@@ -170,9 +195,11 @@ All CSV server actions return `{ data: string } | { error: string }`. Client com
 1. `exportCoverageCSV` — assert CSV header row matches spec; row count matches mock data
 2. `exportKPICSV` — assert CSV header row; filters applied correctly
 3. `exportStaffCSV` — assert CSV header row; department filter applied
-4. `downloadCSV` helper — assert Blob is created with correct MIME type
+4. `downloadCSV` helper — assert Blob is created with correct MIME type. **Requires jsdom environment:** add `// @vitest-environment jsdom` at the top of `exports.test.ts`. Mock `URL.createObjectURL` and `URL.revokeObjectURL` via `vi.stubGlobal` before the test runs, as these are not available in the default Vitest node environment.
 
 **E2E:** No new Playwright specs. Print and file download automation is unreliable without significant infrastructure overhead (out of scope for this phase).
+
+**CLAUDE.md update:** After all tests pass, update the unit test count in CLAUDE.md from **114** to **118**.
 
 ---
 
